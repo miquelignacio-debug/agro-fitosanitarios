@@ -88,7 +88,8 @@ CREATE TABLE productos (
   max_ia_descripcion   text,
   activo               boolean DEFAULT true,
   fuente               text DEFAULT 'manual' CHECK (fuente IN ('sag', 'manual')),
-  created_at           timestamptz DEFAULT now()
+  created_at           timestamptz DEFAULT now(),
+  UNIQUE(numero_registro)
 );
 
 -- ── Stock — movimientos ────────────────────────────────────────

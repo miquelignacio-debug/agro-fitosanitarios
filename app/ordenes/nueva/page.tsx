@@ -42,6 +42,8 @@ function NuevaOTContent() {
   const [campo, setCampo] = useState("");
   const [fechaSolicitud, setFechaSolicitud] = useState(new Date().toISOString().slice(0, 10));
   const [fechaAplicacion, setFechaAplicacion] = useState("");
+  const [horaInicio, setHoraInicio] = useState("05:00");
+  const [horaFin, setHoraFin] = useState("12:00");
   const [solicitanteId, setSolicitanteId] = useState("");
   const [responsableId, setResponsableId] = useState("");
   const [dosificadorId, setDosificadorId] = useState("");
@@ -159,6 +161,8 @@ function NuevaOTContent() {
       campo: campo.trim() || null,
       fecha_solicitud: fechaSolicitud,
       fecha_aplicacion: fechaAplicacion || null,
+      hora_inicio: horaInicio || null,
+      hora_fin: horaFin || null,
       solicitante_id: solicitanteId || null,
       responsable_id: responsableId || null,
       dosificador_id: dosificadorId || null,
@@ -258,6 +262,12 @@ function NuevaOTContent() {
               </Field>
               <Field label="Fecha aplicación">
                 <input type="date" value={fechaAplicacion} onChange={(e) => setFechaAplicacion(e.target.value)} style={inputStyle} />
+              </Field>
+              <Field label="Hora inicio">
+                <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} style={inputStyle} />
+              </Field>
+              <Field label="Hora fin">
+                <input type="time" value={horaFin} onChange={(e) => setHoraFin(e.target.value)} style={inputStyle} />
               </Field>
             </div>
           </section>

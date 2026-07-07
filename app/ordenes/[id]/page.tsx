@@ -6,15 +6,16 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import type { OrdenTrabajo } from "@/lib/types";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
+import { generateOTPdf } from "@/lib/generateOTPdf";
 
 type OTCompleta = OrdenTrabajo & {
   empresa: { nombre: string } | null;
   solicitante: { nombre: string } | null;
   responsable: { nombre: string } | null;
   dosificador: { nombre: string } | null;
-  ot_cuarteles: { id: string; superficie_ha: number; cuartel: { codigo: string; especie: string; variedad: string } }[];
+  ot_cuarteles: { id: string; superficie_ha: number; cuartel: { codigo: string; especie: string; variedad: string; patron: string | null } }[];
   ot_aplicadores: { id: string; operador: { nombre: string }; tractor: { codigo: string } | null; pulverizador: { codigo: string } | null; cantidad_maquinadas: number | null }[];
-  ot_productos: { id: string; dosis_real: number; dosis_unidad: string; carencia_dias: number; rei_horas: number; fecha_viable: string | null; consumo_total: number | null; producto: { nombre_comercial: string; ingrediente_activo: string | null; especies_autorizadas: string[] | null } }[];
+  ot_productos: { id: string; producto_id: string; dosis_real: number; dosis_unidad: string; carencia_dias: number; rei_horas: number; fecha_viable: string | null; consumo_total: number | null; producto: { nombre_comercial: string; ingrediente_activo: string | null; formulacion: string | null; especies_autorizadas: string[] | null } }[];
 };
 
 const TRANSICIONES: Record<OrdenTrabajo["estado"], OrdenTrabajo["estado"][]> = {
@@ -45,9 +46,9 @@ function OTDetalleContent() {
   const [confirmAnular, setConfirmAnular] = useState(false);
   const [notas, setNotas] = useState("");
 
-  // Datos de ejecución (para finalizar)
-  const [horaInicio, setHoraInicio] = useState("");
-  const [horaFin, setHoraFin] = useState("");
+  // Datos de ejecución (para finalizar) — horas default 05:00–12:00
+  const [horaInicio, setHoraInicio] = useState("05:00");
+  const [horaFin, setHoraFin] = useState("12:00");
   const [viento, setViento] = useState("");
   const [temperatura, setTemperatura] = useState("");
   const [mojamientoReal, setMojamientoReal] = useState("");
@@ -64,9 +65,9 @@ function OTDetalleContent() {
         solicitante:usuarios!solicitante_id(nombre),
         responsable:usuarios!responsable_id(nombre),
         dosificador:usuarios!dosificador_id(nombre),
-        ot_cuarteles(id, superficie_ha, cuartel:cuarteles(codigo, especie, variedad)),
+        ot_cuarteles(id, superficie_ha, cuartel:cuarteles(codigo, especie, variedad, patron)),
         ot_aplicadores(id, cantidad_maquinadas, operador:operadores(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo)),
-        ot_productos(id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, producto:productos(nombre_comercial, ingrediente_activo, especies_autorizadas))
+        ot_productos(id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, producto:productos(nombre_comercial, ingrediente_activo, formulacion, especies_autorizadas))
       `)
       .eq("id", params.id)
       .single();
@@ -74,8 +75,8 @@ function OTDetalleContent() {
     if (error || !data) { router.push(`/ordenes${empresaId ? `?empresa=${empresaId}` : ""}`); return; }
     setOT(data as unknown as OTCompleta);
     setNotas(data.notas || "");
-    setHoraInicio(data.hora_inicio || "");
-    setHoraFin(data.hora_fin || "");
+    setHoraInicio(data.hora_inicio || "05:00");
+    setHoraFin(data.hora_fin || "12:00");
     setViento(String(data.viento_kmh || ""));
     setTemperatura(String(data.temperatura_c || ""));
     setMojamientoReal(String(data.mojamiento_real_ltha || ""));
@@ -103,30 +104,39 @@ function OTDetalleContent() {
 
     await supabase.from("ordenes_trabajo").update(update).eq("id", params.id);
 
-    // Si se finaliza, registrar salida de stock por cada producto
-    if (nuevoEstado === "finalizada" && ot) {
-      for (const otProd of ot.ot_productos) {
-        if (!otProd.consumo_total) continue;
-        await supabase.from("stock_movimientos").insert({
+    setTransitioning(false);
+    await load();
+  };
+
+  const handleFinalizar = async () => {
+    if (!ot) return;
+    setTransitioning(true);
+
+    const mojReal = parseFloat(mojamientoReal) || 0;
+    const supTotal = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
+
+    // Calcular consumo real y actualizar ot_productos
+    const stockInserts: { empresa_id: string; producto_id: string; tipo: "salida"; cantidad: number; unidad: string; fecha: string; ot_id: string }[] = [];
+    for (const p of ot.ot_productos) {
+      const unidad = p.dosis_unidad;
+      const consumo = unidad.endsWith("/ha")
+        ? Math.round(p.dosis_real * supTotal * 1000) / 1000
+        : Math.round((p.dosis_real / 100) * mojReal * supTotal * 1000) / 1000;
+
+      await supabase.from("ot_productos").update({ consumo_total: consumo }).eq("id", p.id);
+
+      if (consumo > 0) {
+        stockInserts.push({
           empresa_id: ot.empresa_id,
-          producto_id: otProd.producto.nombre_comercial, // placeholder — necesitamos el id
+          producto_id: p.producto_id,
           tipo: "salida",
-          cantidad: otProd.consumo_total,
-          unidad: otProd.dosis_unidad.split("/")[0] || "lt",
+          cantidad: consumo,
+          unidad: unidad.split("/")[0] || "lt",
           fecha: ot.fecha_aplicacion || new Date().toISOString().slice(0, 10),
           ot_id: ot.id,
         });
       }
     }
-
-    setTransitioning(false);
-    await load();
-  };
-
-  // Corregir la inserción del stock al finalizar (usar producto_id real)
-  const handleFinalizar = async () => {
-    if (!ot) return;
-    setTransitioning(true);
 
     await supabase.from("ordenes_trabajo").update({
       estado: "finalizada",
@@ -134,44 +144,14 @@ function OTDetalleContent() {
       hora_fin: horaFin || null,
       viento_kmh: viento ? parseFloat(viento) : null,
       temperatura_c: temperatura ? parseFloat(temperatura) : null,
-      mojamiento_real_ltha: mojamientoReal ? parseFloat(mojamientoReal) : null,
+      mojamiento_real_ltha: mojReal || null,
       enjuage_pulverizador_lt: enjuage ? parseFloat(enjuage) : null,
       notas: notas || null,
       updated_at: new Date().toISOString(),
     }).eq("id", ot.id);
 
-    // Salida de stock por cada producto
-    const inserts = ot.ot_productos
-      .filter((p) => p.consumo_total && p.consumo_total > 0)
-      .map((p) => ({
-        empresa_id: ot.empresa_id,
-        producto_id: p.id, // ot_productos.producto_id — necesitamos recuperarlo
-        tipo: "salida" as const,
-        cantidad: p.consumo_total!,
-        unidad: p.dosis_unidad.split("/")[0] || "lt",
-        fecha: ot.fecha_aplicacion || new Date().toISOString().slice(0, 10),
-        ot_id: ot.id,
-      }));
-
-    // Obtener producto_id desde la bd
-    const { data: otProds } = await supabase
-      .from("ot_productos")
-      .select("id, producto_id, consumo_total, dosis_unidad")
-      .eq("ot_id", ot.id);
-
-    if (otProds?.length) {
-      const stockInserts = otProds
-        .filter((p) => p.consumo_total > 0)
-        .map((p) => ({
-          empresa_id: ot.empresa_id,
-          producto_id: p.producto_id,
-          tipo: "salida" as const,
-          cantidad: p.consumo_total,
-          unidad: p.dosis_unidad.split("/")[0] || "lt",
-          fecha: ot.fecha_aplicacion || new Date().toISOString().slice(0, 10),
-          ot_id: ot.id,
-        }));
-      if (stockInserts.length) await supabase.from("stock_movimientos").insert(stockInserts);
+    if (stockInserts.length) {
+      await supabase.from("stock_movimientos").insert(stockInserts);
     }
 
     setTransitioning(false);
@@ -211,6 +191,11 @@ function OTDetalleContent() {
           </div>
 
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            {ot.estado !== "anulada" && (
+              <button onClick={() => generateOTPdf(ot as unknown as Parameters<typeof generateOTPdf>[0])} style={printBtn}>
+                Imprimir OT
+              </button>
+            )}
             {transiciones.includes("finalizada") && (
               <button onClick={() => setShowEjecucion(true)} style={primaryBtn}>
                 Registrar finalización
@@ -428,6 +413,7 @@ const backBtn: React.CSSProperties = { background: "transparent", border: "none"
 const estadoBadge: React.CSSProperties = { padding: "3px 12px", borderRadius: "999px", fontSize: "12px", fontWeight: 700, border: "1px solid" };
 const primaryBtn: React.CSSProperties = { padding: "8px 18px", borderRadius: "8px", background: "#1a4731", color: "#fff", fontWeight: 700, fontSize: "13px", border: "none", cursor: "pointer" };
 const secondaryBtn: React.CSSProperties = { padding: "8px 18px", borderRadius: "8px", border: "1.5px solid #1a4731", background: "#fff", color: "#1a4731", fontWeight: 700, fontSize: "13px", cursor: "pointer" };
+const printBtn: React.CSSProperties = { padding: "8px 18px", borderRadius: "8px", border: "1.5px solid #6b7280", background: "#fff", color: "#374151", fontWeight: 700, fontSize: "13px", cursor: "pointer" };
 const dangerBtn: React.CSSProperties = { padding: "8px 18px", borderRadius: "8px", border: "1.5px solid #fca5a5", background: "#fff", color: "#dc2626", fontWeight: 700, fontSize: "13px", cursor: "pointer" };
 const alertBox: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "10px", padding: "12px 16px", marginBottom: "16px", fontSize: "13px", color: "#dc2626", gap: "12px" };
 const cancelSmall: React.CSSProperties = { padding: "6px 14px", borderRadius: "7px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: "pointer" };
