@@ -6,11 +6,12 @@ import { supabase } from "./supabaseClient";
 import { useRouter } from "next/navigation";
 
 const NAV_LINKS = [
-  { href: "/dashboard",  label: "Inicio" },
-  { href: "/ordenes",    label: "Órdenes" },
-  { href: "/bodega",     label: "Bodega" },
-  { href: "/cuarteles",  label: "Cuarteles" },
-  { href: "/productos",  label: "Productos" },
+  { href: "/dashboard",       label: "Inicio" },
+  { href: "/ordenes",         label: "Órdenes" },
+  { href: "/bodega",          label: "Bodega" },
+  { href: "/cuarteles",       label: "Cuarteles" },
+  { href: "/productos",       label: "Productos" },
+  { href: "/admin/usuarios",  label: "Usuarios" },
 ];
 
 export default function Nav({ empresaId }: { empresaId?: string }) {
