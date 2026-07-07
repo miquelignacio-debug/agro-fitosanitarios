@@ -62,9 +62,9 @@ function OTDetalleContent() {
       .select(`
         *,
         empresa:empresas(nombre),
-        solicitante:usuarios!solicitante_id(nombre),
-        responsable:usuarios!responsable_id(nombre),
-        dosificador:usuarios!dosificador_id(nombre),
+        solicitante:personal!solicitante_id(nombre),
+        responsable:personal!responsable_id(nombre),
+        dosificador:personal!dosificador_id(nombre),
         ot_cuarteles(id, superficie_ha, cuartel:cuarteles(codigo, especie, variedad, patron)),
         ot_aplicadores(id, cantidad_maquinadas, operador:operadores(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo)),
         ot_productos(id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, producto:productos(nombre_comercial, ingrediente_activo, formulacion, especies_autorizadas))
@@ -297,8 +297,8 @@ function OTDetalleContent() {
                   <div style={{ display: "flex", gap: "16px", fontSize: "13px", marginTop: "2px" }}>
                     <span>Dosis: <strong>{p.dosis_real} {p.dosis_unidad}</strong></span>
                     {p.consumo_total && <span>Total: <strong>{p.consumo_total} {p.dosis_unidad.split("/")[0]}</strong></span>}
-                    <span style={{ color: "#d97706" }}>PHI: {p.carencia_dias}d</span>
-                    <span style={{ color: "#7c3aed" }}>REI: {p.rei_horas}h</span>
+                    <span style={{ color: "#d97706" }}>Carencia: {p.carencia_dias}d</span>
+                    <span style={{ color: "#7c3aed" }}>Reingreso: {p.rei_horas}h</span>
                   </div>
                   {p.fecha_viable && (
                     <div style={{ fontSize: "12px", color: "#dc2626", fontWeight: 600 }}>

@@ -217,8 +217,8 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
       "Ingrediente activo",
       "Dosis real",
       "Consumo total",
-      "PHI\n(días)",
-      "REI\n(horas)",
+      "Carencia\n(días)",
+      "Reingreso\n(horas)",
       "Fecha viable\ncosecha",
     ]],
     body: ot.ot_productos.map((p, i) => {

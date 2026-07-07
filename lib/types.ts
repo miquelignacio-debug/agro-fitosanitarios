@@ -40,6 +40,15 @@ export type Operador = {
   created_at: string;
 };
 
+export type Personal = {
+  id: string;
+  nombre: string;
+  rut: string | null;
+  cargo: string | null;
+  activo: boolean;
+  created_at: string;
+};
+
 export type Maquinaria = {
   id: string;
   tipo: "tractor" | "pulverizadora" | "otro";
@@ -130,9 +139,9 @@ export type OrdenTrabajo = {
   updated_at: string;
   // joins
   empresa?: Empresa;
-  solicitante?: Usuario;
-  responsable?: Usuario;
-  dosificador?: Usuario;
+  solicitante?: Personal;
+  responsable?: Personal;
+  dosificador?: Personal;
   cuarteles?: OtCuartelConDetalle[];
   aplicadores?: OtAplicadorConDetalle[];
   productos?: OtProductoConDetalle[];
