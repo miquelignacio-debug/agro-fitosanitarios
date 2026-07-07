@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import type { Cuartel, Empresa } from "@/lib/types";
 
-export default function CuartelesPage() {
+function CuartelesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const empresaParam = searchParams.get("empresa") || "";
@@ -229,3 +229,4 @@ const inputStyle: React.CSSProperties = { padding: "9px 12px", borderRadius: "8p
 const modalFooter: React.CSSProperties = { display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "20px" };
 const cancelBtn: React.CSSProperties = { padding: "9px 18px", borderRadius: "8px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "14px", cursor: "pointer" };
 const saveBtn: React.CSSProperties = { padding: "9px 18px", borderRadius: "8px", background: "#1a4731", color: "#fff", fontWeight: 700, fontSize: "14px", border: "none", cursor: "pointer" };
+import { Suspense } from "react"; export default function CuartelesPage() { return <Suspense><CuartelesContent /></Suspense>; }

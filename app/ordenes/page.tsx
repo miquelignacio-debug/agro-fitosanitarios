@@ -8,7 +8,7 @@ import Nav from "@/lib/nav";
 import type { Empresa, OrdenTrabajo } from "@/lib/types";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
 
-export default function OrdenesPage() {
+function OrdenesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const empresaParam = searchParams.get("empresa") || "";
@@ -173,3 +173,4 @@ const th: React.CSSProperties = { padding: "10px 12px", background: "#f0f4f2", f
 const td: React.CSSProperties = { padding: "10px 12px", fontSize: "13px", color: "#374151", borderBottom: "1px solid #f3f4f6" };
 const estadoPill: React.CSSProperties = { padding: "3px 10px", borderRadius: "999px", fontSize: "12px", fontWeight: 700 };
 const viewLink: React.CSSProperties = { fontWeight: 700, fontSize: "13px", color: "#1a4731" };
+import { Suspense } from "react"; export default function OrdenesPage() { return <Suspense><OrdenesContent /></Suspense>; }

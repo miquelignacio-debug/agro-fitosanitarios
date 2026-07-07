@@ -8,7 +8,7 @@ import Nav from "@/lib/nav";
 import type { Empresa, OrdenTrabajo, StockActual } from "@/lib/types";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
 
-export default function DashboardPage() {
+function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const empresaParam = searchParams.get("empresa") || "";
@@ -304,3 +304,4 @@ const stockBadge: React.CSSProperties = {
   border: "1px solid #fca5a5",
   whiteSpace: "nowrap",
 };
+import { Suspense } from "react"; export default function DashboardPage() { return <Suspense><DashboardContent /></Suspense>; }

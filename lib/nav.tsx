@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { supabase } from "./supabaseClient";
@@ -14,7 +15,8 @@ const NAV_LINKS = [
   { href: "/admin/usuarios",  label: "Usuarios" },
 ];
 
-export default function Nav({ empresaId }: { empresaId?: string }) {
+// Componente interno que lee searchParams (necesita Suspense en el padre)
+function NavContent({ empresaId }: { empresaId?: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -53,6 +55,30 @@ export default function Nav({ empresaId }: { empresaId?: string }) {
         </button>
       </div>
     </nav>
+  );
+}
+
+// Fallback mientras carga el searchParams
+function NavFallback() {
+  return (
+    <nav style={navStyle}>
+      <div style={navInner}>
+        <span style={logo}>🌿 Agro Fitosanitarios</span>
+        <div style={links}>
+          {NAV_LINKS.map((l) => (
+            <Link key={l.href} href={l.href} style={linkStyle}>{l.label}</Link>
+          ))}
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+export default function Nav({ empresaId }: { empresaId?: string }) {
+  return (
+    <Suspense fallback={<NavFallback />}>
+      <NavContent empresaId={empresaId} />
+    </Suspense>
   );
 }
 
