@@ -9,6 +9,12 @@ import type { Personal, Maquinaria } from "@/lib/types";
 
 type Tab = "personal" | "maquinaria";
 
+const CARGOS_REQUERIDOS = [
+  { cargo: "Solicitante",          desc: "Quien solicita la aplicación" },
+  { cargo: "Responsable técnico",  desc: "Responsable de la OT" },
+  { cargo: "Dosificador",          desc: "Quien prepara y dosifica los productos" },
+];
+
 // ── Personal tab ──────────────────────────────────────────────────────────────
 function PersonalTab() {
   const [lista, setLista] = useState<Personal[]>([]);
@@ -18,7 +24,7 @@ function PersonalTab() {
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
   const load = async () => {
-    const { data } = await supabase.from("personal").select("*").order("nombre");
+    const { data } = await supabase.from("personal").select("*").order("cargo").order("nombre");
     setLista((data as Personal[]) || []);
     setLoading(false);
   };
@@ -54,18 +60,60 @@ function PersonalTab() {
     load();
   };
 
+  // Cobertura por cargo requerido (activos)
+  const activos = lista.filter(p => p.activo);
+  const contarCargo = (cargo: string) =>
+    activos.filter(p => p.cargo?.toLowerCase() === cargo.toLowerCase()).length;
+
   return (
     <div>
       <div style={sectionHeader}>
         <div>
           <h2 style={sectionTitle}>Personal</h2>
-          <p style={sectionSub}>Solicitantes, responsables, dosificadores y operarios que aparecen en las órdenes de trabajo</p>
+          <p style={sectionSub}>Personas que aparecen en las órdenes de trabajo. Podés tener más de uno por cargo.</p>
         </div>
         <button onClick={() => setEditando({ activo: true })} style={addBtn}>+ Agregar</button>
       </div>
 
+      {/* ── Panel de roles requeridos ── */}
+      {!loading && (
+        <div style={rolesPanel}>
+          <p style={rolesPanelTitle}>Roles requeridos en OT</p>
+          <div style={rolesGrid}>
+            {CARGOS_REQUERIDOS.map(({ cargo, desc }) => {
+              const count = contarCargo(cargo);
+              const ok = count > 0;
+              return (
+                <div key={cargo} style={{ ...rolCard, borderColor: ok ? "#86efac" : "#fca5a5", background: ok ? "#f0fdf4" : "#fef2f2" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                    <span style={{ fontSize: "20px", lineHeight: 1 }}>{ok ? "✅" : "❌"}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: "13px", color: ok ? "#15803d" : "#dc2626" }}>{cargo}</div>
+                      <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "1px" }}>{desc}</div>
+                      <div style={{ fontSize: "12px", fontWeight: 600, color: ok ? "#15803d" : "#dc2626", marginTop: "4px" }}>
+                        {ok ? `${count} persona${count > 1 ? "s" : ""}` : "Sin personal asignado"}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setEditando({ activo: true, cargo })}
+                    style={rolAddBtn}
+                  >
+                    + Agregar {cargo.toLowerCase()}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Formulario ── */}
       {editando !== null && (
         <div style={formBox}>
+          <p style={{ fontSize: "13px", fontWeight: 700, color: "#1a4731", margin: "0 0 12px" }}>
+            {editando.id ? "Editar persona" : `Agregar${editando.cargo ? ` — ${editando.cargo}` : ""}`}
+          </p>
           <div style={formGrid}>
             <FormField label="Nombre *">
               <input
@@ -86,11 +134,15 @@ function PersonalTab() {
             </FormField>
             <FormField label="Cargo / Rol">
               <input
+                list="cargos-sugeridos"
                 value={editando.cargo || ""}
                 onChange={(e) => setEditando(p => ({ ...p!, cargo: e.target.value }))}
                 style={inputStyle}
-                placeholder="Dosificador, Responsable técnico, Solicitante..."
+                placeholder="Seleccionar o escribir..."
               />
+              <datalist id="cargos-sugeridos">
+                {CARGOS_REQUERIDOS.map(c => <option key={c.cargo} value={c.cargo} />)}
+              </datalist>
             </FormField>
             {editando.id && (
               <FormField label="Estado">
@@ -114,10 +166,11 @@ function PersonalTab() {
         </div>
       )}
 
+      {/* ── Lista ── */}
       {loading ? (
         <p style={emptyMsg}>Cargando...</p>
       ) : lista.length === 0 ? (
-        <p style={emptyMsg}>Sin personal cargado aún. Hacé clic en "+ Agregar" para empezar.</p>
+        <p style={emptyMsg}>Sin personal cargado aún. Usá los botones de arriba para agregar.</p>
       ) : (
         <table style={tableStyle}>
           <thead>
@@ -134,7 +187,11 @@ function PersonalTab() {
               <tr key={p.id} style={{ background: i % 2 === 0 ? "#fff" : "#f9fafb" }}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{p.nombre}</td>
                 <td style={tdStyle}>{p.rut || "—"}</td>
-                <td style={tdStyle}>{p.cargo || "—"}</td>
+                <td style={tdStyle}>
+                  {p.cargo
+                    ? <span style={CARGOS_REQUERIDOS.some(c => c.cargo === p.cargo) ? cargoBadge : cargoOtroBadge}>{p.cargo}</span>
+                    : <span style={{ color: "#9ca3af" }}>—</span>}
+                </td>
                 <td style={tdStyle}>
                   <span style={p.activo ? activeBadge : inactiveBadge}>{p.activo ? "Activo" : "Inactivo"}</span>
                 </td>
@@ -401,7 +458,14 @@ const editBtn: React.CSSProperties = { padding: "4px 12px", borderRadius: "6px",
 const deleteBtn: React.CSSProperties = { padding: "4px 12px", borderRadius: "6px", border: "1px solid #fca5a5", background: "#fff", color: "#dc2626", fontSize: "12px", fontWeight: 600, cursor: "pointer" };
 const dangerSmall: React.CSSProperties = { padding: "3px 10px", borderRadius: "6px", background: "#dc2626", color: "#fff", fontSize: "12px", fontWeight: 700, border: "none", cursor: "pointer", marginRight: "4px" };
 const cancelSmall: React.CSSProperties = { padding: "3px 10px", borderRadius: "6px", border: "1px solid #d1d5db", background: "#fff", color: "#374151", fontSize: "12px", fontWeight: 600, cursor: "pointer" };
-const activeBadge: React.CSSProperties = { padding: "2px 10px", borderRadius: "999px", background: "#f0fdf4", color: "#15803d", fontSize: "12px", fontWeight: 600, border: "1px solid #86efac" };
-const inactiveBadge: React.CSSProperties = { padding: "2px 10px", borderRadius: "999px", background: "#f9fafb", color: "#9ca3af", fontSize: "12px", fontWeight: 600, border: "1px solid #d1d5db" };
+const activeBadge: React.CSSProperties    = { padding: "2px 10px", borderRadius: "999px", background: "#f0fdf4", color: "#15803d", fontSize: "12px", fontWeight: 600, border: "1px solid #86efac" };
+const inactiveBadge: React.CSSProperties  = { padding: "2px 10px", borderRadius: "999px", background: "#f9fafb", color: "#9ca3af", fontSize: "12px", fontWeight: 600, border: "1px solid #d1d5db" };
+const cargoBadge: React.CSSProperties     = { padding: "2px 10px", borderRadius: "999px", background: "#eff6ff", color: "#1d4ed8", fontSize: "12px", fontWeight: 600, border: "1px solid #bfdbfe" };
+const cargoOtroBadge: React.CSSProperties = { padding: "2px 10px", borderRadius: "999px", background: "#f3f4f6", color: "#374151", fontSize: "12px", fontWeight: 600, border: "1px solid #d1d5db" };
+const rolesPanel: React.CSSProperties     = { marginBottom: "20px" };
+const rolesPanelTitle: React.CSSProperties = { fontSize: "11px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "10px" };
+const rolesGrid: React.CSSProperties      = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px" };
+const rolCard: React.CSSProperties        = { borderRadius: "10px", border: "1px solid", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" };
+const rolAddBtn: React.CSSProperties      = { padding: "5px 10px", borderRadius: "7px", border: "1.5px solid #1a4731", background: "transparent", color: "#1a4731", fontSize: "12px", fontWeight: 700, cursor: "pointer", alignSelf: "flex-start" };
 
 export default function AjustesPage() { return <Suspense><AjustesContent /></Suspense>; }
