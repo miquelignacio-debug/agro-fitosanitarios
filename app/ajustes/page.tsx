@@ -9,6 +9,19 @@ import type { Personal, Maquinaria } from "@/lib/types";
 
 type Tab = "personal" | "maquinaria";
 
+function formatRut(input: string): string {
+  const clean = input.replace(/[^0-9kK]/g, "").toUpperCase().slice(0, 9);
+  if (clean.length <= 1) return clean;
+  const verifier = clean.slice(-1);
+  const body = clean.slice(0, -1);
+  let formatted = "";
+  for (let i = body.length - 1, count = 0; i >= 0; i--, count++) {
+    if (count > 0 && count % 3 === 0) formatted = "." + formatted;
+    formatted = body[i] + formatted;
+  }
+  return `${formatted}-${verifier}`;
+}
+
 const CARGOS_REQUERIDOS = [
   { cargo: "Solicitante",          desc: "Quien solicita la aplicación" },
   { cargo: "Responsable técnico",  desc: "Responsable de la OT" },
@@ -21,10 +34,18 @@ function PersonalTab() {
   const [loading, setLoading] = useState(true);
   const [editando, setEditando] = useState<Partial<Personal> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
   const load = async () => {
-    const { data } = await supabase.from("personal").select("*").order("cargo").order("nombre");
+    const { data, error } = await supabase.from("personal").select("*").order("cargo").order("nombre");
+    if (error) {
+      setSaveError(
+        error.message.includes("does not exist")
+          ? 'La tabla "personal" no existe aún. Ejecutá la migración v2 en el SQL Editor de Supabase (archivo supabase/migration_v2_personal.sql).'
+          : error.message
+      );
+    }
     setLista((data as Personal[]) || []);
     setLoading(false);
   };
@@ -34,28 +55,37 @@ function PersonalTab() {
   const handleSave = async () => {
     if (!editando?.nombre?.trim()) return;
     setSaving(true);
-    if (editando.id) {
-      await supabase.from("personal").update({
-        nombre: editando.nombre.trim(),
-        rut: editando.rut?.trim() || null,
-        cargo: editando.cargo?.trim() || null,
-        activo: editando.activo !== false,
-      }).eq("id", editando.id);
-    } else {
-      await supabase.from("personal").insert({
-        nombre: editando.nombre.trim(),
-        rut: editando.rut?.trim() || null,
-        cargo: editando.cargo?.trim() || null,
-        activo: true,
-      });
-    }
+    setSaveError("");
+
+    const payload = {
+      nombre: editando.nombre.trim(),
+      rut: editando.rut?.trim() || null,
+      cargo: editando.cargo?.trim() || null,
+      activo: editando.activo !== false,
+    };
+
+    const { error } = editando.id
+      ? await supabase.from("personal").update(payload).eq("id", editando.id)
+      : await supabase.from("personal").insert(payload);
+
     setSaving(false);
+
+    if (error) {
+      setSaveError(
+        error.message.includes("does not exist")
+          ? 'La tabla "personal" no existe aún. Ejecutá primero la migración v2 en el SQL Editor de Supabase.'
+          : error.message
+      );
+      return;
+    }
+
     setEditando(null);
     load();
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from("personal").delete().eq("id", id);
+    const { error } = await supabase.from("personal").delete().eq("id", id);
+    if (error) { setSaveError(error.message); return; }
     setConfirmDel(null);
     load();
   };
@@ -108,6 +138,14 @@ function PersonalTab() {
         </div>
       )}
 
+      {/* ── Error global ── */}
+      {saveError && (
+        <div style={errorBanner}>
+          {saveError}
+          <button onClick={() => setSaveError("")} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontWeight: 700, marginLeft: "8px" }}>✕</button>
+        </div>
+      )}
+
       {/* ── Formulario ── */}
       {editando !== null && (
         <div style={formBox}>
@@ -127,9 +165,10 @@ function PersonalTab() {
             <FormField label="RUT">
               <input
                 value={editando.rut || ""}
-                onChange={(e) => setEditando(p => ({ ...p!, rut: e.target.value }))}
+                onChange={(e) => setEditando(p => ({ ...p!, rut: formatRut(e.target.value) }))}
                 style={inputStyle}
                 placeholder="12.345.678-9"
+                maxLength={12}
               />
             </FormField>
             <FormField label="Cargo / Rol">
@@ -467,5 +506,6 @@ const rolesPanelTitle: React.CSSProperties = { fontSize: "11px", fontWeight: 700
 const rolesGrid: React.CSSProperties      = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px" };
 const rolCard: React.CSSProperties        = { borderRadius: "10px", border: "1px solid", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" };
 const rolAddBtn: React.CSSProperties      = { padding: "5px 10px", borderRadius: "7px", border: "1.5px solid #1a4731", background: "transparent", color: "#1a4731", fontSize: "12px", fontWeight: 700, cursor: "pointer", alignSelf: "flex-start" };
+const errorBanner: React.CSSProperties    = { fontSize: "13px", color: "#dc2626", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "8px", padding: "10px 14px", marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "space-between" };
 
 export default function AjustesPage() { return <Suspense><AjustesContent /></Suspense>; }
