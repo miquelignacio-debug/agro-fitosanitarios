@@ -74,6 +74,8 @@ export type Producto = {
   max_ia_descripcion: string | null;
   activo: boolean;
   fuente: "sag" | "manual";
+  precio_costo: number | null;
+  stock_minimo: number | null;
   created_at: string;
 };
 

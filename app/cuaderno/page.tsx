@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
+import { generateSAGPdf } from "@/lib/generateSAGPdf";
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -246,9 +247,32 @@ function CuadernoContent() {
               Todas las aplicaciones en formato plano para tabla dinámica
             </p>
           </div>
-          <button onClick={exportar} style={exportBtn} disabled={filtered.length === 0}>
-            Exportar Excel ({filtered.length} filas)
-          </button>
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button onClick={exportar} style={exportBtn} disabled={filtered.length === 0}>
+              Exportar Excel ({filtered.length} filas)
+            </button>
+            <button
+              onClick={() => generateSAGPdf({
+                empresa: filtered[0]?.empresa || "Empresa",
+                temporada: new Date().getFullYear().toString(),
+                filas: filtered.map(f => ({
+                  fecha: f.fecha, numero_ot: f.numero, cuartel: f.cuartel,
+                  especie: f.especie, variedad: f.variedad,
+                  plaga: f.objetivo, nombre_comercial: f.producto,
+                  numero_registro: "", ia: f.ia, formulacion: f.formulacion,
+                  dosis_real: f.dosis_real, unidad_dosis: f.unidad_dosis,
+                  consumo_ot: f.consumo_ot, consumo_cuartel: f.consumo_cuartel,
+                  mojamiento_real: f.mojamiento_real,
+                  carencia: f.carencia, reingreso: f.reingreso,
+                  solicitante: f.solicitante, responsable: f.responsable, dosificador: f.dosificador,
+                })),
+              })}
+              style={{ ...exportBtn, background: "#374151" }}
+              disabled={filtered.length === 0}
+            >
+              Informe SAG (PDF)
+            </button>
+          </div>
         </div>
 
         {/* Filtros */}
