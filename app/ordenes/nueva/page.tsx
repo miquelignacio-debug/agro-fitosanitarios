@@ -328,11 +328,22 @@ function NuevaOTContent() {
               )}
             </div>
             <div style={grid2}>
-              <Field label="Plagas / enfermedades objetivo">
-                <PlagasSelector catalog={catalogPlagas} selected={plagasObjetivo} onChange={setPlagasObjetivo} />
+              <Field label="Plagas / enfermedades a controlar">
+                <PlagasSelector
+                  catalog={catalogPlagas}
+                  selected={plagasObjetivo}
+                  onChange={setPlagasObjetivo}
+                  tipos={["plaga", "enfermedad"]}
+                />
               </Field>
               <Field label="Objetivo principal">
-                <input value={objetivoPrincipal} onChange={e => setObjetivoPrincipal(e.target.value)} style={inputStyle} placeholder="Control preventivo / curativo..." />
+                <SingleSelector
+                  catalog={catalogPlagas}
+                  value={objetivoPrincipal}
+                  onChange={setObjetivoPrincipal}
+                  tipos={["manejo", "nutritivo"]}
+                  placeholder="Ej: Control Preventivo, Nutrición Foliar..."
+                />
               </Field>
               <Field label="Mojamiento solicitado (lt/ha)">
                 <input type="number" min="0" value={mojamientoSol} onChange={e => handleMojamiento(e.target.value)} style={inputStyle} placeholder="Ej. 500" />
@@ -536,15 +547,18 @@ const TIPO_COLORS_OT: Record<string, string> = {
   plaga: "#dc2626", enfermedad: "#ea580c", nutritivo: "#15803d", manejo: "#1d4ed8",
 };
 
-function PlagasSelector({ catalog, selected, onChange }: {
+function PlagasSelector({ catalog, selected, onChange, tipos, placeholder: ph }: {
   catalog: CatalogPlaga[];
   selected: string[];
   onChange: (v: string[]) => void;
+  tipos?: string[];
+  placeholder?: string;
 }) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
 
-  const filtered = catalog.filter(c =>
+  const base = tipos ? catalog.filter(c => tipos.includes(c.tipo)) : catalog;
+  const filtered = base.filter(c =>
     c.nombre.toLowerCase().includes(search.toLowerCase()) &&
     !selected.includes(c.nombre)
   );
@@ -574,7 +588,7 @@ function PlagasSelector({ catalog, selected, onChange }: {
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         style={inputStyle}
-        placeholder={selected.length ? "Agregar más..." : "Buscar plaga, enfermedad, objetivo..."}
+        placeholder={selected.length ? "Agregar más..." : (ph || "Buscar plaga o enfermedad...")}
       />
       {open && (search.length > 0 || filtered.length > 0) && (
         <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "#fff", border: "1.5px solid #d1d5db", borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", maxHeight: "220px", overflowY: "auto", marginTop: "2px" }}>
@@ -590,7 +604,7 @@ function PlagasSelector({ catalog, selected, onChange }: {
               {c.nombre}
             </button>
           ))}
-          {search && !catalog.some(c => c.nombre.toLowerCase() === search.toLowerCase()) && (
+          {search && !base.some(c => c.nombre.toLowerCase() === search.toLowerCase()) && (
             <button
               onMouseDown={() => add(search)}
               style={{ display: "flex", width: "100%", padding: "8px 12px", background: "#fafafa", border: "none", borderTop: "1px solid #e5e7eb", cursor: "pointer", fontSize: "12px", color: "#6b7280", textAlign: "left" }}
@@ -599,8 +613,53 @@ function PlagasSelector({ catalog, selected, onChange }: {
             </button>
           )}
           {filtered.length === 0 && !search && (
-            <div style={{ padding: "10px 12px", fontSize: "12px", color: "#9ca3af" }}>Todos los objetivos ya fueron seleccionados</div>
+            <div style={{ padding: "10px 12px", fontSize: "12px", color: "#9ca3af" }}>Todas las opciones ya están seleccionadas</div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SingleSelector({ catalog, value, onChange, tipos, placeholder: ph }: {
+  catalog: CatalogPlaga[];
+  value: string;
+  onChange: (v: string) => void;
+  tipos?: string[];
+  placeholder?: string;
+}) {
+  const [search, setSearch] = useState(value);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => { setSearch(value); }, [value]);
+
+  const base = tipos ? catalog.filter(c => tipos.includes(c.tipo)) : catalog;
+  const filtered = base.filter(c => c.nombre.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        value={search}
+        onChange={e => { setSearch(e.target.value); onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        style={inputStyle}
+        placeholder={ph || "Buscar o escribir..."}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "#fff", border: "1.5px solid #d1d5db", borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", maxHeight: "220px", overflowY: "auto", marginTop: "2px" }}>
+          {filtered.slice(0, 10).map(c => (
+            <button
+              key={c.id}
+              onMouseDown={() => { onChange(c.nombre); setSearch(c.nombre); setOpen(false); }}
+              style={{ display: "flex", alignItems: "center", gap: "8px", width: "100%", padding: "8px 12px", background: "none", border: "none", borderBottom: "1px solid #f3f4f6", cursor: "pointer", textAlign: "left", fontSize: "13px", color: "#111" }}
+            >
+              <span style={{ fontSize: "10px", fontWeight: 700, padding: "1px 6px", borderRadius: "4px", background: "#f3f4f6", color: TIPO_COLORS_OT[c.tipo] || "#374151", textTransform: "uppercase", flexShrink: 0 }}>
+                {c.tipo}
+              </span>
+              {c.nombre}
+            </button>
+          ))}
         </div>
       )}
     </div>

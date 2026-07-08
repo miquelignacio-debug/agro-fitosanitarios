@@ -55,8 +55,10 @@ function MonitoreosContent() {
   const [filtroNivel, setFiltroNivel] = useState<"" | Nivel>("");
 
   useEffect(() => {
-    supabase.from("plagas_objetivos").select("nombre").eq("activo", true).order("tipo").order("nombre")
-      .then(({ data }) => setCatalogPlagas((data || []).map((r: { nombre: string }) => r.nombre)));
+    supabase.from("plagas_objetivos").select("nombre, tipo").eq("activo", true).order("tipo").order("nombre")
+      .then(({ data }) => setCatalogPlagas(
+        (data || []).filter((r: { nombre: string; tipo: string }) => ["plaga", "enfermedad"].includes(r.tipo)).map((r: { nombre: string }) => r.nombre)
+      ));
   }, []);
 
   useEffect(() => {
