@@ -48,6 +48,7 @@ function CargaInicialContent() {
 
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loadingProds, setLoadingProds] = useState(true);
+  const [catalogProv, setCatalogProv] = useState<string[]>([]);
   const [filas, setFilas] = useState<FilaImport[]>([]);
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState<{ ok: number } | null>(null);
@@ -55,8 +56,14 @@ function CargaInicialContent() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    supabase.from("productos").select("id, nombre_comercial, ingrediente_activo, unidad_dosis").eq("activo", true).order("nombre_comercial")
-      .then(({ data }) => { setProductos((data as Producto[]) || []); setLoadingProds(false); });
+    Promise.all([
+      supabase.from("productos").select("id, nombre_comercial, ingrediente_activo, unidad_dosis").eq("activo", true).order("nombre_comercial"),
+      supabase.from("proveedores").select("nombre").eq("activo", true).order("nombre"),
+    ]).then(([{ data: prods }, { data: prov }]) => {
+      setProductos((prods as Producto[]) || []);
+      setCatalogProv((prov || []).map((r: { nombre: string }) => r.nombre));
+      setLoadingProds(false);
+    });
   }, []);
 
   // ── Descargar plantilla ────────────────────────────────────────────────────
@@ -80,6 +87,13 @@ function CargaInicialContent() {
     const ws2 = utils.aoa_to_sheet([catHead, ...catRows]);
     ws2["!cols"] = [{ wch: 45 }, { wch: 32 }, { wch: 15 }];
     utils.book_append_sheet(wb, ws2, "Catálogo Productos");
+
+    // Hoja 3: Proveedores registrados
+    const provHead = ["Proveedor"];
+    const provRows = catalogProv.map(n => [n]);
+    const ws3 = utils.aoa_to_sheet([provHead, ...provRows]);
+    ws3["!cols"] = [{ wch: 35 }];
+    utils.book_append_sheet(wb, ws3, "Proveedores");
 
     writeFile(wb, "plantilla_inventario_inicial.xlsx");
   };

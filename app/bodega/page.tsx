@@ -102,9 +102,14 @@ function BodegaContent() {
             <h1 style={pageTitle}>Bodega — {empresa?.nombre}</h1>
             <p style={pageSubtitle}>Stock de productos fitosanitarios</p>
           </div>
-          <Link href={`/bodega/ingreso?empresa=${empresaId}`} style={primaryBtn}>
-            + Ingreso a bodega
-          </Link>
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <Link href={`/bodega/carga-inicial?empresa=${empresaId}`} style={secondaryBtn}>
+              Inventario inicial (plantilla)
+            </Link>
+            <Link href={`/bodega/ingreso?empresa=${empresaId}`} style={primaryBtn}>
+              + Ingreso a bodega
+            </Link>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -225,6 +230,7 @@ const pageHeader: React.CSSProperties = { display: "flex", justifyContent: "spac
 const pageTitle: React.CSSProperties = { fontSize: "24px", fontWeight: 800, color: "#1a4731" };
 const pageSubtitle: React.CSSProperties = { fontSize: "13px", color: "#6b7280", marginTop: "4px" };
 const primaryBtn: React.CSSProperties = { padding: "9px 18px", borderRadius: "10px", background: "#1a4731", color: "#fff", fontWeight: 700, fontSize: "14px" };
+const secondaryBtn: React.CSSProperties = { padding: "9px 18px", borderRadius: "10px", border: "1.5px solid #1a4731", color: "#1a4731", fontWeight: 700, fontSize: "14px" };
 const tabBar: React.CSSProperties = { display: "flex", gap: "4px", marginBottom: "16px", borderBottom: "2px solid #e5e7eb", paddingBottom: "0" };
 const tabBtn: React.CSSProperties = { padding: "8px 18px", borderRadius: "8px 8px 0 0", border: "none", background: "transparent", color: "#6b7280", fontWeight: 600, fontSize: "14px", cursor: "pointer" };
 const tabBtnActive: React.CSSProperties = { background: "#1a4731", color: "#fff" };

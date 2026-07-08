@@ -7,9 +7,10 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import type { Personal, Maquinaria } from "@/lib/types";
 
-type Tab = "personal" | "maquinaria" | "objetivos";
+type Tab = "personal" | "maquinaria" | "objetivos" | "proveedores";
 
 type PlagaObj = { id: string; nombre: string; tipo: string; activo: boolean };
+type Proveedor = { id: string; nombre: string; activo: boolean };
 
 function formatRut(input: string): string {
   const clean = input.replace(/[^0-9kK]/g, "").toUpperCase().slice(0, 9);
@@ -602,6 +603,145 @@ function ObjetivosTab() {
   );
 }
 
+// ── Proveedores tab ───────────────────────────────────────────────────────────
+function ProveedoresTab() {
+  const [lista, setLista] = useState<Proveedor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editando, setEditando] = useState<Partial<Proveedor> | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const [buscar, setBuscar] = useState("");
+  const [saveError, setSaveError] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from("proveedores").select("*").order("nombre");
+    if (error) setSaveError(error.message.includes("does not exist") ? 'La tabla "proveedores" no existe. Ejecuta migration_v5_proveedores.sql en el SQL Editor de Supabase.' : error.message);
+    setLista((data as Proveedor[]) || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const filtered = buscar ? lista.filter(p => p.nombre.toLowerCase().includes(buscar.toLowerCase())) : lista;
+
+  const handleSave = async () => {
+    if (!editando?.nombre?.trim()) return;
+    setSaving(true);
+    setSaveError("");
+    const payload = { nombre: editando.nombre.trim(), activo: editando.activo !== false };
+    const { error } = editando.id
+      ? await supabase.from("proveedores").update(payload).eq("id", editando.id)
+      : await supabase.from("proveedores").insert(payload);
+    setSaving(false);
+    if (error) {
+      setSaveError(error.message.toLowerCase().includes("unique") || error.message.toLowerCase().includes("duplicate")
+        ? `Ya existe "${editando.nombre}" en el catálogo de proveedores.`
+        : error.message);
+      return;
+    }
+    setEditando(null);
+    load();
+  };
+
+  const handleDelete = async (id: string) => {
+    await supabase.from("proveedores").delete().eq("id", id);
+    setConfirmDel(null);
+    load();
+  };
+
+  return (
+    <div>
+      <div style={sectionHeader}>
+        <div>
+          <h2 style={sectionTitle}>Proveedores</h2>
+          <p style={sectionSub}>Proveedores de insumos fitosanitarios. Se usan en los ingresos de bodega. La restricción UNIQUE impide nombres duplicados.</p>
+        </div>
+        <button onClick={() => setEditando({ activo: true })} style={addBtn}>+ Agregar</button>
+      </div>
+
+      {saveError && (
+        <div style={errorBanner}>
+          {saveError}
+          <button onClick={() => setSaveError("")} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontWeight: 700, marginLeft: "8px" }}>✕</button>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: "8px", marginBottom: "16px", alignItems: "center" }}>
+        <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar proveedor..." style={{ ...inputStyle, width: "240px" }} />
+        <span style={{ fontSize: "13px", color: "#6b7280" }}>{filtered.filter(p => p.activo).length} activos · {filtered.length} total</span>
+      </div>
+
+      {editando !== null && (
+        <div style={formBox}>
+          <p style={{ fontSize: "13px", fontWeight: 700, color: "#1a4731", margin: "0 0 12px" }}>
+            {editando.id ? "Editar proveedor" : "Agregar proveedor"}
+          </p>
+          <div style={formGrid}>
+            <FormField label="Nombre *">
+              <input value={editando.nombre || ""} onChange={e => setEditando(p => ({ ...p!, nombre: e.target.value }))} style={inputStyle} placeholder="Ej: Agroventas SpA, Basf Chile..." autoFocus />
+            </FormField>
+            {editando.id && (
+              <FormField label="Estado">
+                <select value={editando.activo ? "activo" : "inactivo"} onChange={e => setEditando(p => ({ ...p!, activo: e.target.value === "activo" }))} style={inputStyle}>
+                  <option value="activo">Activo</option>
+                  <option value="inactivo">Inactivo</option>
+                </select>
+              </FormField>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: "8px", marginTop: "14px" }}>
+            <button onClick={handleSave} style={saveBtn} disabled={saving || !editando.nombre?.trim()}>
+              {saving ? "Guardando..." : editando.id ? "Actualizar" : "Agregar"}
+            </button>
+            <button onClick={() => setEditando(null)} style={cancelBtn}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p style={emptyMsg}>Cargando...</p>
+      ) : filtered.length === 0 ? (
+        <p style={emptyMsg}>{buscar ? "Sin resultados." : "Sin proveedores cargados aún."}</p>
+      ) : (
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Nombre</th>
+              <th style={thStyle}>Estado</th>
+              <th style={thStyle}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((p, i) => (
+              <tr key={p.id} style={{ background: i % 2 === 0 ? "#fff" : "#f9fafb" }}>
+                <td style={{ ...tdStyle, fontWeight: 600 }}>{p.nombre}</td>
+                <td style={tdStyle}>
+                  <span style={p.activo ? activeBadge : inactiveBadge}>{p.activo ? "Activo" : "Inactivo"}</span>
+                </td>
+                <td style={{ ...tdStyle, textAlign: "right" }}>
+                  {confirmDel === p.id ? (
+                    <>
+                      <span style={{ fontSize: "12px", color: "#dc2626", marginRight: "8px" }}>¿Eliminar?</span>
+                      <button onClick={() => handleDelete(p.id)} style={dangerSmall}>Sí</button>
+                      <button onClick={() => setConfirmDel(null)} style={cancelSmall}>No</button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => setEditando({ ...p })} style={editBtn}>Editar</button>
+                      <button onClick={() => setConfirmDel(p.id)} style={deleteBtn}>Eliminar</button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 // ── Helper ────────────────────────────────────────────────────────────────────
 function FormField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -627,15 +767,15 @@ function AjustesContent() {
         </div>
 
         <div style={tabBar}>
-          {(["personal", "maquinaria", "objetivos"] as Tab[]).map((t) => (
+          {(["personal", "maquinaria", "objetivos", "proveedores"] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)} style={tab === t ? activeTabStyle : inactiveTabStyle}>
-              {t === "personal" ? "Personal" : t === "maquinaria" ? "Maquinaria" : "Objetivos / Plagas"}
+              {t === "personal" ? "Personal" : t === "maquinaria" ? "Maquinaria" : t === "objetivos" ? "Objetivos / Plagas" : "Proveedores"}
             </button>
           ))}
         </div>
 
         <div style={tabContent}>
-          {tab === "personal" ? <PersonalTab /> : tab === "maquinaria" ? <MaquinariaTab /> : <ObjetivosTab />}
+          {tab === "personal" ? <PersonalTab /> : tab === "maquinaria" ? <MaquinariaTab /> : tab === "objetivos" ? <ObjetivosTab /> : <ProveedoresTab />}
         </div>
       </main>
     </>

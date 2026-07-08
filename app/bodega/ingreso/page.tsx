@@ -30,17 +30,20 @@ function IngresoContent() {
   const [proveedor, setProveedor] = useState("");
   const [notas, setNotas] = useState("");
   const [busqueda, setBusqueda] = useState("");
+  const [catalogProv, setCatalogProv] = useState<string[]>([]);
 
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
 
-      const [{ data: emp }, { data: prod }, { data: usr }] = await Promise.all([
+      const [{ data: emp }, { data: prod }, { data: usr }, { data: prov }] = await Promise.all([
         supabase.from("empresas").select("*").order("nombre"),
         supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial"),
         supabase.from("usuarios").select("*").eq("id", user.id).single(),
+        supabase.from("proveedores").select("nombre").eq("activo", true).order("nombre"),
       ]);
+      setCatalogProv((prov || []).map((r: { nombre: string }) => r.nombre));
       setEmpresas((emp as Empresa[]) || []);
       setProductos((prod as Producto[]) || []);
       setUsuario(usr as Usuario);
@@ -136,7 +139,16 @@ function IngresoContent() {
             </div>
             <div style={{ marginTop: "14px" }}>
               <Field label="Proveedor">
-                <input value={proveedor} onChange={(e) => setProveedor(e.target.value)} style={inputStyle} placeholder="Nombre del proveedor" />
+                <input
+                  list="catalog-proveedores"
+                  value={proveedor}
+                  onChange={(e) => setProveedor(e.target.value)}
+                  style={inputStyle}
+                  placeholder="Buscar o escribir proveedor..."
+                />
+                <datalist id="catalog-proveedores">
+                  {catalogProv.map(n => <option key={n} value={n} />)}
+                </datalist>
               </Field>
             </div>
           </section>
