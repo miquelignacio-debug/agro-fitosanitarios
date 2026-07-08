@@ -40,6 +40,7 @@ function MonitoreosContent() {
 
   const [monitoreos, setMonitoreos] = useState<Monitoreo[]>([]);
   const [cuarteles, setCuarteles] = useState<Cuartel[]>([]);
+  const [catalogPlagas, setCatalogPlagas] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -52,6 +53,11 @@ function MonitoreosContent() {
   // Filtros
   const [filtroCuartel, setFiltroCuartel] = useState("");
   const [filtroNivel, setFiltroNivel] = useState<"" | Nivel>("");
+
+  useEffect(() => {
+    supabase.from("plagas_objetivos").select("nombre").eq("activo", true).order("tipo").order("nombre")
+      .then(({ data }) => setCatalogPlagas((data || []).map((r: { nombre: string }) => r.nombre)));
+  }, []);
 
   useEffect(() => {
     if (!empresa) { setLoading(false); return; }
@@ -194,7 +200,17 @@ function MonitoreosContent() {
               </div>
               <div>
                 <label style={lbl}>Plaga / Enfermedad *</label>
-                <input value={form.plaga} onChange={e => setForm(p => ({ ...p, plaga: e.target.value }))} style={inp} placeholder="Ej: Botrytis cinerea, Mite, etc." autoFocus={!editId} />
+                <input
+                  list="catalog-plagas"
+                  value={form.plaga}
+                  onChange={e => setForm(p => ({ ...p, plaga: e.target.value }))}
+                  style={inp}
+                  placeholder="Buscar o escribir..."
+                  autoFocus={!editId}
+                />
+                <datalist id="catalog-plagas">
+                  {catalogPlagas.map(nombre => <option key={nombre} value={nombre} />)}
+                </datalist>
               </div>
               <div>
                 <label style={lbl}>Nivel de infestación *</label>

@@ -10,6 +10,7 @@ import { FUNCIONES_FITOSANITARIAS } from "@/lib/types";
 type CuartelRow    = { cuartel_id: string; superficie_ha: string };
 type AplicadorRow  = { operador_id: string; tractor_id: string; pulverizador_id: string; cantidad_maquinadas: string };
 type ProductoRow   = { producto_id: string; dosis_real: string; dosis_unidad: string; carencia_dias: string; rei_horas: string; consumo_total: string };
+type CatalogPlaga  = { id: string; nombre: string; tipo: string; activo: boolean };
 
 import { Suspense } from "react";
 function NuevaOTContent() {
@@ -29,6 +30,7 @@ function NuevaOTContent() {
   const [pulverizadoras, setPulverizadoras] = useState<Maquinaria[]>([]);
   const [productos,      setProductos]      = useState<Producto[]>([]);
   const [personal,       setPersonal]       = useState<Personal[]>([]);
+  const [catalogPlagas,  setCatalogPlagas]  = useState<CatalogPlaga[]>([]);
 
   // Cabecera
   const [empresa,         setEmpresa]         = useState(empresaId);
@@ -40,7 +42,7 @@ function NuevaOTContent() {
   const [responsableId,   setResponsableId]   = useState("");
   const [dosificadorId,   setDosificadorId]   = useState("");
   const [funciones,       setFunciones]       = useState<string[]>([]);
-  const [plagasObjetivo,  setPlagasObjetivo]  = useState("");
+  const [plagasObjetivo,  setPlagasObjetivo]  = useState<string[]>([]);
   const [objetivoPrincipal, setObjetivoPrincipal] = useState("");
   const [mojamientoSol,   setMojamientoSol]   = useState("");
   const [notas,           setNotas]           = useState("");
@@ -60,7 +62,7 @@ function NuevaOTContent() {
       if (!user) { router.push("/login"); return; }
 
       const [
-        { data: emp }, { data: cua }, { data: op }, { data: mac }, { data: prod }, { data: pers },
+        { data: emp }, { data: cua }, { data: op }, { data: mac }, { data: prod }, { data: pers }, { data: plagas },
       ] = await Promise.all([
         supabase.from("empresas").select("*").order("nombre"),
         supabase.from("cuarteles").select("*").eq("activo", true).order("codigo"),
@@ -68,6 +70,7 @@ function NuevaOTContent() {
         supabase.from("maquinaria").select("*").eq("activo", true).order("codigo"),
         supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial"),
         supabase.from("personal").select("*").eq("activo", true).order("nombre"),
+        supabase.from("plagas_objetivos").select("*").eq("activo", true).order("tipo").order("nombre"),
       ]);
 
       setEmpresas((emp as Empresa[]) || []);
@@ -78,6 +81,7 @@ function NuevaOTContent() {
       setPulverizadoras(maq.filter(m => m.tipo === "pulverizadora"));
       setProductos((prod as Producto[]) || []);
       setPersonal((pers as Personal[]) || []);
+      setCatalogPlagas((plagas as CatalogPlaga[]) || []);
       if (!empresa && emp?.length) setEmpresa(emp[0].id);
       setLoading(false);
     };
@@ -186,7 +190,7 @@ function NuevaOTContent() {
       responsable_id: responsableId || null,
       dosificador_id: dosificadorId || null,
       funcion: funciones.length ? funciones : null,
-      plagas_objetivo: plagasObjetivo.trim() || null,
+      plagas_objetivo: plagasObjetivo.length ? plagasObjetivo.join(", ") : null,
       objetivo_principal: objetivoPrincipal.trim() || null,
       mojamiento_solicitado_ltha: mojamientoSol ? parseFloat(mojamientoSol) : null,
       ppe_traje: ppe.traje, ppe_guantes: ppe.guantes, ppe_anteojos: ppe.anteojos,
@@ -325,7 +329,7 @@ function NuevaOTContent() {
             </div>
             <div style={grid2}>
               <Field label="Plagas / enfermedades objetivo">
-                <input value={plagasObjetivo} onChange={e => setPlagasObjetivo(e.target.value)} style={inputStyle} placeholder="Ej. Botrytis, Oídio..." />
+                <PlagasSelector catalog={catalogPlagas} selected={plagasObjetivo} onChange={setPlagasObjetivo} />
               </Field>
               <Field label="Objetivo principal">
                 <input value={objetivoPrincipal} onChange={e => setObjetivoPrincipal(e.target.value)} style={inputStyle} placeholder="Control preventivo / curativo..." />
@@ -525,6 +529,81 @@ function NuevaOTContent() {
         </div>
       </main>
     </>
+  );
+}
+
+const TIPO_COLORS_OT: Record<string, string> = {
+  plaga: "#dc2626", enfermedad: "#ea580c", nutritivo: "#15803d", manejo: "#1d4ed8",
+};
+
+function PlagasSelector({ catalog, selected, onChange }: {
+  catalog: CatalogPlaga[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const filtered = catalog.filter(c =>
+    c.nombre.toLowerCase().includes(search.toLowerCase()) &&
+    !selected.includes(c.nombre)
+  );
+
+  const add = (nombre: string) => {
+    onChange([...selected, nombre]);
+    setSearch("");
+    setOpen(false);
+  };
+  const remove = (nombre: string) => onChange(selected.filter(s => s !== nombre));
+
+  return (
+    <div style={{ position: "relative" }}>
+      {selected.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
+          {selected.map(s => (
+            <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "999px", background: "#f0fdf4", border: "1px solid #86efac", fontSize: "12px", fontWeight: 600, color: "#15803d" }}>
+              {s}
+              <button onClick={() => remove(s)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1, color: "#6b7280", fontSize: "14px" }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input
+        value={search}
+        onChange={e => { setSearch(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        style={inputStyle}
+        placeholder={selected.length ? "Agregar más..." : "Buscar plaga, enfermedad, objetivo..."}
+      />
+      {open && (search.length > 0 || filtered.length > 0) && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "#fff", border: "1.5px solid #d1d5db", borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", maxHeight: "220px", overflowY: "auto", marginTop: "2px" }}>
+          {filtered.slice(0, 10).map(c => (
+            <button
+              key={c.id}
+              onMouseDown={() => add(c.nombre)}
+              style={{ display: "flex", alignItems: "center", gap: "8px", width: "100%", padding: "8px 12px", background: "none", border: "none", borderBottom: "1px solid #f3f4f6", cursor: "pointer", textAlign: "left", fontSize: "13px", color: "#111" }}
+            >
+              <span style={{ fontSize: "10px", fontWeight: 700, padding: "1px 6px", borderRadius: "4px", background: "#f3f4f6", color: TIPO_COLORS_OT[c.tipo] || "#374151", textTransform: "uppercase", flexShrink: 0 }}>
+                {c.tipo}
+              </span>
+              {c.nombre}
+            </button>
+          ))}
+          {search && !catalog.some(c => c.nombre.toLowerCase() === search.toLowerCase()) && (
+            <button
+              onMouseDown={() => add(search)}
+              style={{ display: "flex", width: "100%", padding: "8px 12px", background: "#fafafa", border: "none", borderTop: "1px solid #e5e7eb", cursor: "pointer", fontSize: "12px", color: "#6b7280", textAlign: "left" }}
+            >
+              + Agregar &ldquo;{search}&rdquo; como nuevo
+            </button>
+          )}
+          {filtered.length === 0 && !search && (
+            <div style={{ padding: "10px 12px", fontSize: "12px", color: "#9ca3af" }}>Todos los objetivos ya fueron seleccionados</div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

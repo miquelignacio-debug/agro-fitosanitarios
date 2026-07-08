@@ -7,7 +7,9 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import type { Personal, Maquinaria } from "@/lib/types";
 
-type Tab = "personal" | "maquinaria";
+type Tab = "personal" | "maquinaria" | "objetivos";
+
+type PlagaObj = { id: string; nombre: string; tipo: string; activo: boolean };
 
 function formatRut(input: string): string {
   const clean = input.replace(/[^0-9kK]/g, "").toUpperCase().slice(0, 9);
@@ -428,6 +430,175 @@ function MaquinariaTab() {
   );
 }
 
+// ── Objetivos tab ─────────────────────────────────────────────────────────────
+const TIPOS_PLAGA = ["plaga", "enfermedad", "nutritivo", "manejo"] as const;
+const TIPO_LABEL: Record<string, string> = { plaga: "Plaga", enfermedad: "Enfermedad", nutritivo: "Nutritivo", manejo: "Manejo" };
+const TIPO_COLORS: Record<string, React.CSSProperties> = {
+  plaga:      { background: "#fef2f2", color: "#dc2626", borderColor: "#fca5a5" },
+  enfermedad: { background: "#fff7ed", color: "#ea580c", borderColor: "#fed7aa" },
+  nutritivo:  { background: "#f0fdf4", color: "#15803d", borderColor: "#86efac" },
+  manejo:     { background: "#eff6ff", color: "#1d4ed8", borderColor: "#bfdbfe" },
+};
+
+function ObjetivosTab() {
+  const [lista, setLista] = useState<PlagaObj[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editando, setEditando] = useState<Partial<PlagaObj> | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [confirmDel, setConfirmDel] = useState<string | null>(null);
+  const [buscar, setBuscar] = useState("");
+  const [filtroTipo, setFiltroTipo] = useState("");
+  const [saveError, setSaveError] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from("plagas_objetivos").select("*").order("tipo").order("nombre");
+    if (error) setSaveError(error.message.includes("does not exist") ? 'La tabla "plagas_objetivos" no existe. Ejecutá migration_v4_plagas.sql en el SQL Editor de Supabase.' : error.message);
+    setLista((data as PlagaObj[]) || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const filtered = lista.filter(p => {
+    if (filtroTipo && p.tipo !== filtroTipo) return false;
+    if (buscar && !p.nombre.toLowerCase().includes(buscar.toLowerCase())) return false;
+    return true;
+  });
+
+  const handleSave = async () => {
+    if (!editando?.nombre?.trim()) return;
+    setSaving(true);
+    setSaveError("");
+    const payload = { nombre: editando.nombre.trim(), tipo: editando.tipo || "plaga", activo: editando.activo !== false };
+    const { error } = editando.id
+      ? await supabase.from("plagas_objetivos").update(payload).eq("id", editando.id)
+      : await supabase.from("plagas_objetivos").insert(payload);
+    setSaving(false);
+    if (error) {
+      setSaveError(error.message.toLowerCase().includes("unique") || error.message.toLowerCase().includes("duplicate")
+        ? `Ya existe "${editando.nombre}" en el catálogo.`
+        : error.message);
+      return;
+    }
+    setEditando(null);
+    load();
+  };
+
+  const handleDelete = async (id: string) => {
+    await supabase.from("plagas_objetivos").delete().eq("id", id);
+    setConfirmDel(null);
+    load();
+  };
+
+  return (
+    <div>
+      <div style={sectionHeader}>
+        <div>
+          <h2 style={sectionTitle}>Catálogo de objetivos</h2>
+          <p style={sectionSub}>Plagas, enfermedades y objetivos disponibles en OTs y Monitoreos. La restricción UNIQUE en la base de datos impide duplicados.</p>
+        </div>
+        <button onClick={() => setEditando({ tipo: "plaga", activo: true })} style={addBtn}>+ Agregar</button>
+      </div>
+
+      {saveError && (
+        <div style={errorBanner}>
+          {saveError}
+          <button onClick={() => setSaveError("")} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontWeight: 700, marginLeft: "8px" }}>✕</button>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap", alignItems: "center" }}>
+        <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar..." style={{ ...inputStyle, width: "200px" }} />
+        <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} style={{ ...inputStyle, width: "auto" }}>
+          <option value="">Todos los tipos</option>
+          {TIPOS_PLAGA.map(t => <option key={t} value={t}>{TIPO_LABEL[t]}</option>)}
+        </select>
+        <span style={{ fontSize: "13px", color: "#6b7280" }}>{filtered.filter(p => p.activo).length} activos · {filtered.length} total</span>
+      </div>
+
+      {editando !== null && (
+        <div style={formBox}>
+          <p style={{ fontSize: "13px", fontWeight: 700, color: "#1a4731", margin: "0 0 12px" }}>
+            {editando.id ? "Editar entrada" : "Agregar al catálogo"}
+          </p>
+          <div style={formGrid}>
+            <FormField label="Nombre *">
+              <input value={editando.nombre || ""} onChange={e => setEditando(p => ({ ...p!, nombre: e.target.value }))} style={inputStyle} placeholder="Ej: Botrytis, Arañita Roja..." autoFocus />
+            </FormField>
+            <FormField label="Tipo *">
+              <select value={editando.tipo || "plaga"} onChange={e => setEditando(p => ({ ...p!, tipo: e.target.value }))} style={inputStyle}>
+                {TIPOS_PLAGA.map(t => <option key={t} value={t}>{TIPO_LABEL[t]}</option>)}
+              </select>
+            </FormField>
+            {editando.id && (
+              <FormField label="Estado">
+                <select value={editando.activo ? "activo" : "inactivo"} onChange={e => setEditando(p => ({ ...p!, activo: e.target.value === "activo" }))} style={inputStyle}>
+                  <option value="activo">Activo</option>
+                  <option value="inactivo">Inactivo</option>
+                </select>
+              </FormField>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: "8px", marginTop: "14px" }}>
+            <button onClick={handleSave} style={saveBtn} disabled={saving || !editando.nombre?.trim()}>
+              {saving ? "Guardando..." : editando.id ? "Actualizar" : "Agregar"}
+            </button>
+            <button onClick={() => setEditando(null)} style={cancelBtn}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p style={emptyMsg}>Cargando...</p>
+      ) : filtered.length === 0 ? (
+        <p style={emptyMsg}>Sin resultados.</p>
+      ) : (
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Nombre</th>
+              <th style={thStyle}>Tipo</th>
+              <th style={thStyle}>Estado</th>
+              <th style={thStyle}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((p, i) => {
+              const tc = TIPO_COLORS[p.tipo] || {};
+              return (
+                <tr key={p.id} style={{ background: i % 2 === 0 ? "#fff" : "#f9fafb" }}>
+                  <td style={{ ...tdStyle, fontWeight: 600 }}>{p.nombre}</td>
+                  <td style={tdStyle}>
+                    <span style={{ padding: "2px 10px", borderRadius: "999px", fontSize: "12px", fontWeight: 600, border: "1px solid", ...tc }}>{TIPO_LABEL[p.tipo]}</span>
+                  </td>
+                  <td style={tdStyle}>
+                    <span style={p.activo ? activeBadge : inactiveBadge}>{p.activo ? "Activo" : "Inactivo"}</span>
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: "right" }}>
+                    {confirmDel === p.id ? (
+                      <>
+                        <span style={{ fontSize: "12px", color: "#dc2626", marginRight: "8px" }}>¿Eliminar?</span>
+                        <button onClick={() => handleDelete(p.id)} style={dangerSmall}>Sí</button>
+                        <button onClick={() => setConfirmDel(null)} style={cancelSmall}>No</button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => setEditando({ ...p })} style={editBtn}>Editar</button>
+                        <button onClick={() => setConfirmDel(p.id)} style={deleteBtn}>Eliminar</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 // ── Helper ────────────────────────────────────────────────────────────────────
 function FormField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -453,19 +624,15 @@ function AjustesContent() {
         </div>
 
         <div style={tabBar}>
-          {(["personal", "maquinaria"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={tab === t ? activeTabStyle : inactiveTabStyle}
-            >
-              {t === "personal" ? "Personal" : "Maquinaria"}
+          {(["personal", "maquinaria", "objetivos"] as Tab[]).map((t) => (
+            <button key={t} onClick={() => setTab(t)} style={tab === t ? activeTabStyle : inactiveTabStyle}>
+              {t === "personal" ? "Personal" : t === "maquinaria" ? "Maquinaria" : "Objetivos / Plagas"}
             </button>
           ))}
         </div>
 
         <div style={tabContent}>
-          {tab === "personal" ? <PersonalTab /> : <MaquinariaTab />}
+          {tab === "personal" ? <PersonalTab /> : tab === "maquinaria" ? <MaquinariaTab /> : <ObjetivosTab />}
         </div>
       </main>
     </>
