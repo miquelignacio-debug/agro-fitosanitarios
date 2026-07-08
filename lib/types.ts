@@ -51,7 +51,7 @@ export type Personal = {
 
 export type Maquinaria = {
   id: string;
-  tipo: "tractor" | "pulverizadora" | "otro";
+  tipo: "tractor" | "implemento" | "otro";
   codigo: string;
   descripcion: string | null;
   capacidad_lt: number | null;

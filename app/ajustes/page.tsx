@@ -26,8 +26,9 @@ function formatRut(input: string): string {
 
 const CARGOS_REQUERIDOS = [
   { cargo: "Solicitante",          desc: "Quien solicita la aplicación" },
-  { cargo: "Responsable técnico",  desc: "Responsable de la OT" },
+  { cargo: "Responsable técnico",  desc: "Responsable técnico de la OT" },
   { cargo: "Dosificador",          desc: "Quien prepara y dosifica los productos" },
+  { cargo: "Aplicador",            desc: "Quien realiza la aplicación en terreno" },
 ];
 
 // ── Personal tab ──────────────────────────────────────────────────────────────
@@ -303,7 +304,7 @@ function MaquinariaTab() {
 
   const TIPOS: Record<Maquinaria["tipo"], string> = {
     tractor: "Tractor",
-    pulverizadora: "Pulverizadora",
+    implemento: "Implemento",
     otro: "Otro",
   };
 
@@ -312,7 +313,7 @@ function MaquinariaTab() {
       <div style={sectionHeader}>
         <div>
           <h2 style={sectionTitle}>Maquinaria</h2>
-          <p style={sectionSub}>Tractores, pulverizadoras y otros equipos. La capacidad (lt) de la pulverizadora se usa para calcular el número de maquinadas.</p>
+          <p style={sectionSub}>Tractores, implementos y otros equipos. La capacidad (lt) del implemento (pulverizadora, etc.) se usa para calcular el número de maquinadas.</p>
         </div>
         <button onClick={() => setEditando({ tipo: "tractor", activo: true })} style={addBtn}>+ Agregar</button>
       </div>
@@ -327,7 +328,7 @@ function MaquinariaTab() {
                 style={inputStyle}
               >
                 <option value="tractor">Tractor</option>
-                <option value="pulverizadora">Pulverizadora</option>
+                <option value="implemento">Implemento</option>
                 <option value="otro">Otro</option>
               </select>
             </FormField>
@@ -348,17 +349,19 @@ function MaquinariaTab() {
                 placeholder="Descripción opcional"
               />
             </FormField>
-            <FormField label="Capacidad (lt)">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={editando.capacidad_lt != null ? String(editando.capacidad_lt) : ""}
-                onChange={(e) => setEditando(p => ({ ...p!, capacidad_lt: e.target.value ? parseFloat(e.target.value) : null }))}
-                style={inputStyle}
-                placeholder="Ej: 2000"
-              />
-            </FormField>
+            {editando.tipo !== "tractor" && (
+              <FormField label="Capacidad (lt)">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={editando.capacidad_lt != null ? String(editando.capacidad_lt) : ""}
+                  onChange={(e) => setEditando(p => ({ ...p!, capacidad_lt: e.target.value ? parseFloat(e.target.value) : null }))}
+                  style={inputStyle}
+                  placeholder="Ej: 2000"
+                />
+              </FormField>
+            )}
             {editando.id && (
               <FormField label="Estado">
                 <select
@@ -403,7 +406,7 @@ function MaquinariaTab() {
                 <td style={tdStyle}>{TIPOS[m.tipo]}</td>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{m.codigo}</td>
                 <td style={tdStyle}>{m.descripcion || "—"}</td>
-                <td style={tdStyle}>{m.capacidad_lt != null ? `${m.capacidad_lt} lt` : "—"}</td>
+                <td style={tdStyle}>{m.tipo === "tractor" ? <span style={{ color: "#d1d5db", fontSize: "11px" }}>N/A</span> : m.capacidad_lt != null ? `${m.capacidad_lt} lt` : "—"}</td>
                 <td style={tdStyle}>
                   <span style={m.activo ? activeBadge : inactiveBadge}>{m.activo ? "Activo" : "Inactivo"}</span>
                 </td>

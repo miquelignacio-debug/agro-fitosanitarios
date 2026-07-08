@@ -259,7 +259,7 @@ function OTDetalleContent() {
                     <div style={{ fontWeight: 600 }}>{a.operador.nombre}</div>
                     <div style={{ fontSize: "12px", color: "#6b7280" }}>
                       {a.tractor?.codigo && `Tractor: ${a.tractor.codigo}`}
-                      {a.pulverizador?.codigo && ` · Pulv: ${a.pulverizador.codigo}`}
+                      {a.pulverizador?.codigo && ` · Implemento: ${a.pulverizador.codigo}`}
                       {a.cantidad_maquinadas && ` · ${a.cantidad_maquinadas} maquinadas`}
                     </div>
                   </div>
@@ -366,7 +366,7 @@ function OTDetalleContent() {
                 <ModalField label="Mojamiento real (lt/ha)">
                   <input type="number" min="0" step="1" value={mojamientoReal} onChange={(e) => setMojamientoReal(e.target.value)} style={inputStyle} placeholder="0" />
                 </ModalField>
-                <ModalField label="Enjuague pulverizadora (lt)">
+                <ModalField label="Enjuague implemento (lt)">
                   <input type="number" min="0" step="1" value={enjuage} onChange={(e) => setEnjuage(e.target.value)} style={inputStyle} placeholder="0" />
                 </ModalField>
               </div>

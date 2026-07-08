@@ -27,7 +27,7 @@ function NuevaOTContent() {
   const [cuarteles,      setCuarteles]      = useState<Cuartel[]>([]);
   const [operadores,     setOperadores]     = useState<Operador[]>([]);
   const [tractores,      setTractores]      = useState<Maquinaria[]>([]);
-  const [pulverizadoras, setPulverizadoras] = useState<Maquinaria[]>([]);
+  const [implementos,    setImplementos]    = useState<Maquinaria[]>([]);
   const [productos,      setProductos]      = useState<Producto[]>([]);
   const [personal,       setPersonal]       = useState<Personal[]>([]);
   const [catalogPlagas,  setCatalogPlagas]  = useState<CatalogPlaga[]>([]);
@@ -78,7 +78,7 @@ function NuevaOTContent() {
       setOperadores((op as Operador[]) || []);
       const maq = (mac as Maquinaria[]) || [];
       setTractores(maq.filter(m => m.tipo === "tractor"));
-      setPulverizadoras(maq.filter(m => m.tipo === "pulverizadora"));
+      setImplementos(maq.filter(m => m.tipo === "implemento"));
       setProductos((prod as Producto[]) || []);
       setPersonal((pers as Personal[]) || []);
       setCatalogPlagas((plagas as CatalogPlaga[]) || []);
@@ -110,7 +110,7 @@ function NuevaOTContent() {
     const mojVal = parseFloat(moj ?? mojamientoSol) || 0;
     const supTotal = cuarts.reduce((s, c) => s + (parseFloat(c.superficie_ha) || 0), 0);
     if (!supTotal || !mojVal || !pulvId) return "";
-    const pulv = pulverizadoras.find(p => p.id === pulvId);
+    const pulv = implementos.find(p => p.id === pulvId);
     if (!pulv?.capacidad_lt) return "";
     return String(Math.ceil(supTotal * mojVal / pulv.capacidad_lt));
   };
@@ -417,10 +417,10 @@ function NuevaOTContent() {
                   </Field>
                 </div>
                 <div style={{ flex: "2 1 140px" }}>
-                  <Field label={i === 0 ? "Pulverizadora" : ""}>
+                  <Field label={i === 0 ? "Implemento" : ""}>
                     <select value={row.pulverizador_id} onChange={e => setAplicadorRow(i, "pulverizador_id", e.target.value)} style={inputStyle}>
                       <option value="">— Sin asignar —</option>
-                      {pulverizadoras.map(p => <option key={p.id} value={p.id}>{p.codigo}{p.capacidad_lt ? ` (${p.capacidad_lt}lt)` : ""}</option>)}
+                      {implementos.map(p => <option key={p.id} value={p.id}>{p.codigo}{p.capacidad_lt ? ` (${p.capacidad_lt}lt)` : ""}</option>)}
                     </select>
                   </Field>
                 </div>
@@ -441,7 +441,7 @@ function NuevaOTContent() {
               </div>
             ))}
             <p style={{ fontSize: "11px", color: "#9ca3af", marginBottom: "8px" }}>
-              Maquinadas = ⌈ha × lt/ha ÷ capacidad pulverizadora⌉ — se calcula automáticamente al seleccionar pulverizadora y mojamiento.
+              Maquinadas = ⌈ha × lt/ha ÷ capacidad implemento⌉ — se calcula automáticamente al seleccionar implemento y mojamiento.
             </p>
             <button onClick={addAplicador} style={addBtn} type="button">+ Agregar aplicador</button>
           </section>
