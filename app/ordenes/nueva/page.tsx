@@ -68,7 +68,7 @@ function NuevaOTContent() {
         supabase.from("cuarteles").select("*").eq("activo", true).order("codigo"),
         supabase.from("operadores").select("*").eq("activo", true).order("nombre"),
         supabase.from("maquinaria").select("*").eq("activo", true).order("codigo"),
-        supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial"),
+        supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(5000),
         supabase.from("personal").select("*").eq("activo", true).order("nombre"),
         supabase.from("plagas_objetivos").select("*").eq("activo", true).order("tipo").order("nombre"),
       ]);

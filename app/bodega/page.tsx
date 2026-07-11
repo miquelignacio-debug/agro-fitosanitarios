@@ -70,8 +70,10 @@ function BodegaContent() {
   const tipoLabel: Record<string, string> = {
     entrada: "Entrada",
     salida: "Salida (OT)",
-    transferencia_salida: "Transferencia salida",
-    transferencia_entrada: "Transferencia entrada",
+    transferencia_salida: "Transf. salida",
+    transferencia_entrada: "Transf. entrada",
+    ajuste_entrada: "Ajuste +",
+    ajuste_salida: "Ajuste −",
   };
 
   const tipoColor: Record<string, string> = {
@@ -79,6 +81,8 @@ function BodegaContent() {
     salida: "#dc2626",
     transferencia_salida: "#d97706",
     transferencia_entrada: "#1d4ed8",
+    ajuste_entrada: "#0891b2",
+    ajuste_salida: "#7c3aed",
   };
 
   return (
@@ -105,6 +109,9 @@ function BodegaContent() {
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             <Link href={`/bodega/carga-inicial?empresa=${empresaId}`} style={secondaryBtn}>
               Inventario inicial (plantilla)
+            </Link>
+            <Link href={`/bodega/inventario?empresa=${empresaId}`} style={secondaryBtn}>
+              Toma de inventario
             </Link>
             <Link href={`/bodega/ingreso?empresa=${empresaId}`} style={primaryBtn}>
               + Ingreso a bodega
@@ -175,7 +182,7 @@ function BodegaContent() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Fecha", "Tipo", "Producto", "Cantidad", "Documento", "Proveedor / OT / Contraparte", "Notas"].map((h) => (
+                  {["Fecha", "Tipo", "Producto", "Cantidad", "Valor unit.", "Valor total", "Documento", "Proveedor / OT / Contraparte", "Notas"].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -193,6 +200,16 @@ function BodegaContent() {
                     <td style={{ ...td, textAlign: "right" }}>
                       {m.tipo.includes("salida") ? "-" : "+"}{Number(m.cantidad).toFixed(3)} {m.unidad}
                     </td>
+                    <td style={{ ...td, textAlign: "right", color: "#6b7280" }}>
+                      {(m.precio_unitario ?? m.costo_unitario) != null
+                        ? `$${Number(m.precio_unitario ?? m.costo_unitario).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
+                        : "—"}
+                    </td>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>
+                      {(m.precio_unitario ?? m.costo_unitario) != null
+                        ? `$${(Number(m.precio_unitario ?? m.costo_unitario) * Number(m.cantidad)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
+                        : "—"}
+                    </td>
                     <td style={td}>
                       {m.documento_tipo ? (
                         <span>
@@ -208,7 +225,7 @@ function BodegaContent() {
                 ))}
                 {movimientos.length === 0 && (
                   <tr>
-                    <td colSpan={7} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
+                    <td colSpan={9} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
                       Sin movimientos registrados.
                     </td>
                   </tr>

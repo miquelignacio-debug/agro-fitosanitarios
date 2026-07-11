@@ -25,7 +25,8 @@ export default function ProductosPage() {
       const { data } = await supabase
         .from("productos")
         .select("*")
-        .order("nombre_comercial");
+        .order("nombre_comercial")
+        .limit(5000);
       setProductos((data as Producto[]) || []);
       setLoading(false);
     };
@@ -111,7 +112,7 @@ export default function ProductosPage() {
                       }).eq("id", editPrecios.id);
                       setSavingPrecios(false);
                       setEditPrecios(null);
-                      const { data } = await supabase.from("productos").select("*").order("nombre_comercial");
+                      const { data } = await supabase.from("productos").select("*").order("nombre_comercial").limit(5000);
                       setProductos((data as Producto[]) || []);
                     }}>
                       {savingPrecios ? "Guardando..." : "Guardar"}

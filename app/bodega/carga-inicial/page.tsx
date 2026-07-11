@@ -56,14 +56,29 @@ function CargaInicialContent() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    Promise.all([
-      supabase.from("productos").select("id, nombre_comercial, ingrediente_activo, unidad_dosis").eq("activo", true).order("nombre_comercial"),
-      supabase.from("proveedores").select("nombre").eq("activo", true).order("nombre"),
-    ]).then(([{ data: prods }, { data: prov }]) => {
-      setProductos((prods as Producto[]) || []);
+    const init = async () => {
+      // Cargar todos los productos con paginación (evita límite de 1000 filas de Supabase)
+      const allProds: Producto[] = [];
+      const pageSize = 1000;
+      let from = 0;
+      while (true) {
+        const { data } = await supabase
+          .from("productos")
+          .select("id, nombre_comercial, ingrediente_activo, unidad_dosis")
+          .eq("activo", true)
+          .order("nombre_comercial")
+          .range(from, from + pageSize - 1);
+        if (!data?.length) break;
+        allProds.push(...(data as Producto[]));
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
+      const { data: prov } = await supabase.from("proveedores").select("nombre").eq("activo", true).order("nombre");
+      setProductos(allProds);
       setCatalogProv((prov || []).map((r: { nombre: string }) => r.nombre));
       setLoadingProds(false);
-    });
+    };
+    init();
   }, []);
 
   // ── Descargar plantilla ────────────────────────────────────────────────────

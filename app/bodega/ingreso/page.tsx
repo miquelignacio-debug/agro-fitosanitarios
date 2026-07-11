@@ -28,6 +28,7 @@ function IngresoContent() {
   const [docTipo, setDocTipo] = useState<"guia_despacho" | "factura">("guia_despacho");
   const [docNumero, setDocNumero] = useState("");
   const [proveedor, setProveedor] = useState("");
+  const [precioUnitario, setPrecioUnitario] = useState("");
   const [notas, setNotas] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [catalogProv, setCatalogProv] = useState<string[]>([]);
@@ -39,7 +40,7 @@ function IngresoContent() {
 
       const [{ data: emp }, { data: prod }, { data: usr }, { data: prov }] = await Promise.all([
         supabase.from("empresas").select("*").order("nombre"),
-        supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial"),
+        supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(5000),
         supabase.from("usuarios").select("*").eq("id", user.id).single(),
         supabase.from("proveedores").select("nombre").eq("activo", true).order("nombre"),
       ]);
@@ -74,6 +75,7 @@ function IngresoContent() {
       documento_tipo: docTipo,
       documento_numero: docNumero.trim(),
       proveedor: proveedor.trim() || null,
+      precio_unitario: precioUnitario ? parseFloat(precioUnitario) : null,
       notas: notas.trim() || null,
       usuario_id: usuario?.id || null,
     });
@@ -137,7 +139,7 @@ function IngresoContent() {
                 />
               </Field>
             </div>
-            <div style={{ marginTop: "14px" }}>
+            <div style={{ marginTop: "14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
               <Field label="Proveedor">
                 <input
                   list="catalog-proveedores"
@@ -149,6 +151,20 @@ function IngresoContent() {
                 <datalist id="catalog-proveedores">
                   {catalogProv.map(n => <option key={n} value={n} />)}
                 </datalist>
+              </Field>
+              <Field label="Precio unitario ($/unidad)">
+                <input
+                  type="number" min="0" step="0.01"
+                  value={precioUnitario}
+                  onChange={(e) => setPrecioUnitario(e.target.value)}
+                  style={inputStyle}
+                  placeholder="Ej: 12500"
+                />
+                {precioUnitario && cantidad && (
+                  <span style={{ fontSize: "11px", color: "#6b7280", marginTop: "3px" }}>
+                    Valor total: ${(parseFloat(precioUnitario) * parseFloat(cantidad || "0")).toLocaleString("es-CL", { maximumFractionDigits: 0 })}
+                  </span>
+                )}
               </Field>
             </div>
           </section>

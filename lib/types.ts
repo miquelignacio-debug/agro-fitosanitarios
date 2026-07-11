@@ -83,13 +83,15 @@ export type StockMovimiento = {
   id: string;
   empresa_id: string;
   producto_id: string;
-  tipo: "entrada" | "salida" | "transferencia_salida" | "transferencia_entrada";
+  tipo: "entrada" | "salida" | "transferencia_salida" | "transferencia_entrada" | "ajuste_entrada" | "ajuste_salida";
   cantidad: number;
   unidad: string;
   fecha: string;
   documento_tipo: "guia_despacho" | "factura" | null;
   documento_numero: string | null;
   proveedor: string | null;
+  precio_unitario: number | null;
+  costo_unitario: number | null;
   ot_id: string | null;
   empresa_contraparte_id: string | null;
   notas: string | null;
