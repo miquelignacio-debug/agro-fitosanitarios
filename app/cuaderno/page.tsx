@@ -15,6 +15,8 @@ type OTRaw = {
   estado: string;
   fecha_aplicacion: string | null;
   mojamiento_real_ltha: number | null;
+  viento_kmh: number | null;
+  temperatura_c: number | null;
   plagas_objetivo: string | null;
   objetivo_principal: string | null;
   empresa: { nombre: string } | null;
@@ -24,6 +26,12 @@ type OTRaw = {
   ot_cuarteles: {
     superficie_ha: number;
     cuartel: { codigo: string; especie: string; variedad: string; patron: string | null } | null;
+  }[];
+  ot_aplicadores: {
+    personal: { nombre: string } | null;
+    operador: { nombre: string } | null;
+    tractor: { codigo: string } | null;
+    pulverizador: { codigo: string } | null;
   }[];
   ot_productos: {
     dosis_real: number;
@@ -59,6 +67,11 @@ type Fila = {
   reingreso: number;
   fecha_viable: string;
   mojamiento_real: number | null;
+  aplicador: string;
+  tractor: string;
+  pulverizador: string;
+  viento: number | null;
+  temperatura: number | null;
   objetivo: string;
   solicitante: string;
   responsable: string;
@@ -109,6 +122,11 @@ function flattenOTs(ots: OTRaw[]): Fila[] {
           reingreso: op.rei_horas,
           fecha_viable: op.fecha_viable ?? "",
           mojamiento_real: ot.mojamiento_real_ltha,
+          aplicador: ot.ot_aplicadores.map(a => a.personal?.nombre ?? a.operador?.nombre ?? "").filter(Boolean).join(", "),
+          tractor: ot.ot_aplicadores.map(a => a.tractor?.codigo ?? "").filter(Boolean).join(", "),
+          pulverizador: ot.ot_aplicadores.map(a => a.pulverizador?.codigo ?? "").filter(Boolean).join(", "),
+          viento: ot.viento_kmh,
+          temperatura: ot.temperatura_c,
           objetivo: [ot.plagas_objetivo, ot.objetivo_principal].filter(Boolean).join(" — "),
           solicitante: ot.solicitante?.nombre ?? "",
           responsable: ot.responsable?.nombre ?? "",
@@ -148,7 +166,7 @@ function CuadernoContent() {
     const { data, error: err } = await supabase
       .from("ordenes_trabajo")
       .select(`
-        id, numero, estado, fecha_aplicacion, mojamiento_real_ltha, plagas_objetivo, objetivo_principal,
+        id, numero, estado, fecha_aplicacion, mojamiento_real_ltha, viento_kmh, temperatura_c, plagas_objetivo, objetivo_principal,
         empresa:empresas(nombre),
         solicitante:personal!solicitante_id(nombre),
         responsable:personal!responsable_id(nombre),
@@ -156,6 +174,12 @@ function CuadernoContent() {
         ot_cuarteles(
           superficie_ha,
           cuartel:cuarteles(codigo, especie, variedad, patron)
+        ),
+        ot_aplicadores(
+          personal:personal!personal_id(nombre),
+          operador:operadores(nombre),
+          tractor:maquinaria!tractor_id(codigo),
+          pulverizador:maquinaria!pulverizador_id(codigo)
         ),
         ot_productos(
           dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total,
@@ -196,7 +220,8 @@ function CuadernoContent() {
       "Dosis Real", "Unidad Dosis",
       "Consumo Total OT", "Consumo Est. Cuartel",
       "Carencia (días)", "Reingreso (h)", "Fecha Viable Cosecha",
-      "Mojamiento Real (lt/ha)", "Plaga/Objetivo",
+      "Mojamiento Real (lt/ha)", "Aplicador", "Tractor", "Implemento",
+      "Viento (km/h)", "Temperatura (°C)", "Plaga/Objetivo",
       "Solicitante", "Responsable", "Dosificador",
     ];
     const filasFmt = filtered.map(f => [
@@ -221,6 +246,11 @@ function CuadernoContent() {
       f.reingreso,
       f.fecha_viable ? new Date(f.fecha_viable + "T12:00:00").toLocaleDateString("es-CL") : "",
       f.mojamiento_real ?? "",
+      f.aplicador,
+      f.tractor,
+      f.pulverizador,
+      f.viento ?? "",
+      f.temperatura ?? "",
       f.objetivo,
       f.solicitante,
       f.responsable,
@@ -266,6 +296,8 @@ function CuadernoContent() {
                   consumo_ot: f.consumo_ot, consumo_cuartel: f.consumo_cuartel,
                   mojamiento_real: f.mojamiento_real,
                   carencia: f.carencia, reingreso: f.reingreso,
+                  aplicador: f.aplicador, tractor: f.tractor, pulverizador: f.pulverizador,
+                  viento: f.viento, temperatura: f.temperatura,
                   solicitante: f.solicitante, responsable: f.responsable, dosificador: f.dosificador,
                 })),
               })}
@@ -347,7 +379,8 @@ function CuadernoContent() {
                       "Producto", "Ingrediente Activo",
                       "Dosis Real", "Consumo OT", "Consumo Cuartel",
                       "Carencia (d)", "Reingreso (h)", "Fecha Viable",
-                      "Moj. Real (lt/ha)", "Objetivo",
+                      "Moj. Real (lt/ha)", "Aplicador", "Tractor", "Implemento",
+                      "Viento (km/h)", "Temp. (°C)", "Objetivo",
                       "Solicitante", "Responsable", "Dosificador",
                     ].map(h => <th key={h} style={th}>{h}</th>)}
                   </tr>
@@ -379,6 +412,11 @@ function CuadernoContent() {
                       <td style={{ ...td, textAlign: "center" }}>{f.reingreso}</td>
                       <td style={td}>{fmtDate(f.fecha_viable)}</td>
                       <td style={{ ...td, textAlign: "right" }}>{f.mojamiento_real ?? "—"}</td>
+                      <td style={{ ...td, fontSize: "12px" }}>{f.aplicador || "—"}</td>
+                      <td style={{ ...td, fontSize: "12px" }}>{f.tractor || "—"}</td>
+                      <td style={{ ...td, fontSize: "12px" }}>{f.pulverizador || "—"}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{f.viento ?? "—"}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{f.temperatura ?? "—"}</td>
                       <td style={{ ...td, fontSize: "12px", maxWidth: "160px" }}>{f.objetivo || "—"}</td>
                       <td style={{ ...td, fontSize: "12px" }}>{f.solicitante || "—"}</td>
                       <td style={{ ...td, fontSize: "12px" }}>{f.responsable || "—"}</td>
