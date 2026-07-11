@@ -546,7 +546,7 @@ function NuevaOTContent() {
                   <div style={{ flex: "1 1 110px" }}>
                     <Field label={i === 0 ? "Unidad" : ""}>
                       <select value={row.dosis_unidad} onChange={e => setProductoRow(i, "dosis_unidad", e.target.value)} style={inputStyle}>
-                        {["lt/ha", "kg/ha", "ml/ha", "g/ha", "g/100lt", "ml/100lt", "cc/100lt"].map(u => (
+                        {["lt/ha", "kg/ha", "cc/ha", "g/ha", "g/100lt", "cc/100lt"].map(u => (
                           <option key={u} value={u}>{u}</option>
                         ))}
                       </select>

@@ -11,7 +11,8 @@ type OTParaPDF = OrdenTrabajo & {
     cuartel: { codigo: string; especie: string; variedad: string; patron: string | null };
   }[];
   ot_aplicadores: {
-    operador: { nombre: string };
+    operador?: { nombre: string } | null;
+    personal?: { nombre: string } | null;
     tractor: { codigo: string } | null;
     pulverizador: { codigo: string } | null;
     cantidad_maquinadas: number | null;
@@ -175,7 +176,7 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
     margin: { left: ML, right: 14 },
     head: [["Operador", "Tractor", "Pulverizadora", "N° Maquinadas"]],
     body: ot.ot_aplicadores.map((a) => [
-      a.operador.nombre,
+      a.personal?.nombre ?? a.operador?.nombre ?? "—",
       a.tractor?.codigo ?? "—",
       a.pulverizador?.codigo ?? "—",
       a.cantidad_maquinadas !== null ? String(a.cantidad_maquinadas) : "—",
@@ -319,7 +320,7 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
   line(firmasY);
   const firmas = [
     { label: "Dosificador", nombre: ot.dosificador?.nombre ?? "" },
-    { label: "Aplicador", nombre: ot.ot_aplicadores.map((a) => a.operador.nombre).join(" / ") },
+    { label: "Aplicador", nombre: ot.ot_aplicadores.map((a) => a.personal?.nombre ?? a.operador?.nombre ?? "—").join(" / ") },
     { label: "Responsable", nombre: ot.responsable?.nombre ?? "" },
   ];
   const fw = CW / 3;
