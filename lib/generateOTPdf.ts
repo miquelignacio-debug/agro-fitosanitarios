@@ -14,7 +14,7 @@ type OTParaPDF = OrdenTrabajo & {
     operador?: { nombre: string } | null;
     personal?: { nombre: string } | null;
     tractor: { codigo: string } | null;
-    pulverizador: { codigo: string } | null;
+    pulverizador: { codigo: string; capacidad_lt?: number | null } | null;
     cantidad_maquinadas: number | null;
   }[];
   ot_productos: {
@@ -29,19 +29,48 @@ type OTParaPDF = OrdenTrabajo & {
       ingrediente_activo: string | null;
       formulacion: string | null;
       especies_autorizadas: string[] | null;
+      unidad_dosis?: string | null;
     };
   }[];
 };
-
-const VERDE = "#1a4731";
-const VERDE_CLARO = "#e8f5ee";
-const GRIS = "#6b7280";
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   return new Date(iso + "T12:00:00").toLocaleDateString("es-CL", {
     day: "2-digit", month: "2-digit", year: "numeric",
   });
+}
+
+function fmtNum(n: number): string {
+  return n < 10 ? n.toFixed(2) : n.toFixed(1);
+}
+
+// Detalle de maquinadas: "3 maquinadas" o "3 maq. completas + saldo 750 lt"
+function maquinadasDetalle(supTotal: number, mojamiento: number | null, capacidad: number | null): string | null {
+  if (!mojamiento || !capacidad || !supTotal) return null;
+  const litrosTotales = supTotal * mojamiento;
+  const completas = Math.floor(litrosTotales / capacidad);
+  const saldo = Math.round(litrosTotales - completas * capacidad);
+  if (saldo < 1) return `${completas} maquinada${completas !== 1 ? "s" : ""}`;
+  return `${completas} maq. completa${completas !== 1 ? "s" : ""} + saldo ${saldo} lt`;
+}
+
+// Dosis por maquinada completa y saldo
+function dosisPorMaquinada(
+  dosis: number, unidad: string,
+  capacidad: number, litrosSaldo: number, mojamiento: number
+): { dosisMaq: number; dosisSaldo: number | null } {
+  if (unidad.includes("/ha")) {
+    return {
+      dosisMaq:   dosis * (capacidad / mojamiento),
+      dosisSaldo: litrosSaldo > 0 ? dosis * (litrosSaldo / mojamiento) : null,
+    };
+  }
+  // /100lt
+  return {
+    dosisMaq:   dosis * (capacidad / 100),
+    dosisSaldo: litrosSaldo > 0 ? dosis * (litrosSaldo / 100) : null,
+  };
 }
 
 export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
@@ -55,59 +84,38 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
   const CW = MR - ML;
   let Y = 14;
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  const verdeFill = () => {
-    doc.setFillColor(26, 71, 49);
-    doc.setTextColor(255, 255, 255);
-  };
+  const verdeFill = () => { doc.setFillColor(26, 71, 49); doc.setTextColor(255, 255, 255); };
   const resetText = () => doc.setTextColor(30, 30, 30);
-  const line = (y: number) => {
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.3);
-    doc.line(ML, y, MR, y);
-  };
+  const line = (y: number) => { doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3); doc.line(ML, y, MR, y); };
+  const lastY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
 
-  // ── ENCABEZADO ───────────────────────────────────────────────────────────
+  // ── ENCABEZADO ────────────────────────────────────────────────────────────
   verdeFill();
   doc.rect(ML, Y, CW, 14, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(16);
   doc.text(`ORDEN DE TRABAJO N° ${ot.numero}`, W / 2, Y + 5.5, { align: "center" });
   doc.setFontSize(10);
   doc.text(ot.empresa?.nombre?.toUpperCase() ?? "", W / 2, Y + 11, { align: "center" });
   resetText();
   Y += 18;
 
-  // Estado + fechas en fila
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(80, 80, 80);
-  const estado = ESTADOS_OT[ot.estado] ?? ot.estado;
-  doc.text(`Estado: ${estado}`, ML, Y);
+  doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(80, 80, 80);
+  doc.text(`Estado: ${ESTADOS_OT[ot.estado] ?? ot.estado}`, ML, Y);
   doc.text(`Solicitud: ${fmtDate(ot.fecha_solicitud)}`, ML + 50, Y);
   doc.text(`Aplicación: ${fmtDate(ot.fecha_aplicacion)}`, ML + 110, Y);
-  resetText();
-  Y += 5;
-  line(Y);
-  Y += 4;
+  resetText(); Y += 5; line(Y); Y += 4;
 
-  // ── RESPONSABLES (fila compacta) ──────────────────────────────────────────
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(26, 71, 49);
+  // ── RESPONSABLES ──────────────────────────────────────────────────────────
+  doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(26, 71, 49);
   doc.text("RESPONSABLES", ML, Y);
-  Y += 4;
-  resetText();
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
+  Y += 4; resetText();
 
-  const resp = [
+  const col = CW / 3;
+  [
     ["Solicitante:", ot.solicitante?.nombre ?? "—"],
     ["Dosificador:", ot.dosificador?.nombre ?? "—"],
     ["Responsable:", ot.responsable?.nombre ?? "—"],
-  ];
-  const col = CW / 3;
-  resp.forEach(([label, val], i) => {
+  ].forEach(([label, val], i) => {
     const x = ML + i * col;
     doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(80, 80, 80);
     doc.text(label, x, Y);
@@ -120,37 +128,28 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
     doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(80, 80, 80);
     doc.text("Campo:", ML, Y);
     doc.setFont("helvetica", "normal"); doc.setFontSize(9); resetText();
-    doc.text(ot.campo, ML + 14, Y);
-    Y += 6;
+    doc.text(ot.campo, ML + 14, Y); Y += 6;
   }
 
-  // Plagas / objetivo
   if (ot.plagas_objetivo || ot.objetivo_principal) {
     doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(80, 80, 80);
     doc.text("Objetivo:", ML, Y);
     doc.setFont("helvetica", "normal"); doc.setFontSize(9); resetText();
-    const obj = [ot.plagas_objetivo, ot.objetivo_principal].filter(Boolean).join(" — ");
-    doc.text(obj, ML + 17, Y, { maxWidth: CW - 17 });
+    doc.text([ot.plagas_objetivo, ot.objetivo_principal].filter(Boolean).join(" — "), ML + 17, Y, { maxWidth: CW - 17 });
     Y += 6;
   }
   line(Y); Y += 4;
 
   // ── CUARTELES ─────────────────────────────────────────────────────────────
   doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(26, 71, 49);
-  doc.text("CUARTELES A TRATAR", ML, Y);
-  Y += 2;
+  doc.text("CUARTELES A TRATAR", ML, Y); Y += 2;
 
   const supTotal = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
   autoTable(doc, {
-    startY: Y,
-    margin: { left: ML, right: 14 },
+    startY: Y, margin: { left: ML, right: 14 },
     head: [["Cuartel", "Especie", "Variedad", "Patrón", "Superficie (ha)"]],
-    body: ot.ot_cuarteles.map((c) => [
-      c.cuartel.codigo,
-      c.cuartel.especie,
-      c.cuartel.variedad,
-      c.cuartel.patron ?? "—",
-      c.superficie_ha.toFixed(2),
+    body: ot.ot_cuarteles.map(c => [
+      c.cuartel.codigo, c.cuartel.especie, c.cuartel.variedad, c.cuartel.patron ?? "—", c.superficie_ha.toFixed(2),
     ]).concat([["", "", "", "TOTAL", supTotal.toFixed(2)]]),
     headStyles: { fillColor: [26, 71, 49], textColor: 255, fontSize: 8, fontStyle: "bold" },
     bodyStyles: { fontSize: 8 },
@@ -164,89 +163,69 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
       }
     },
   });
-  Y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
+  Y = lastY() + 5;
 
   // ── APLICADORES ───────────────────────────────────────────────────────────
   doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(26, 71, 49);
-  doc.text("APLICADORES", ML, Y);
-  Y += 2;
+  doc.text("APLICADORES", ML, Y); Y += 2;
 
+  const moj = ot.mojamiento_solicitado_ltha;
   autoTable(doc, {
-    startY: Y,
-    margin: { left: ML, right: 14 },
-    head: [["Operador", "Tractor", "Pulverizadora", "N° Maquinadas"]],
-    body: ot.ot_aplicadores.map((a) => [
-      a.personal?.nombre ?? a.operador?.nombre ?? "—",
-      a.tractor?.codigo ?? "—",
-      a.pulverizador?.codigo ?? "—",
-      a.cantidad_maquinadas !== null ? String(a.cantidad_maquinadas) : "—",
-    ]),
+    startY: Y, margin: { left: ML, right: 14 },
+    head: [["Operador", "Tractor", "Implemento (capacidad)", "Maquinadas"]],
+    body: ot.ot_aplicadores.map(a => {
+      const cap = a.pulverizador?.capacidad_lt ?? null;
+      const detalle = maquinadasDetalle(supTotal, moj, cap) ?? (a.cantidad_maquinadas != null ? String(a.cantidad_maquinadas) : "—");
+      return [
+        a.personal?.nombre ?? a.operador?.nombre ?? "—",
+        a.tractor?.codigo ?? "—",
+        a.pulverizador ? `${a.pulverizador.codigo}${cap ? ` (${cap} lt)` : ""}` : "—",
+        detalle,
+      ];
+    }),
     headStyles: { fillColor: [26, 71, 49], textColor: 255, fontSize: 8, fontStyle: "bold" },
     bodyStyles: { fontSize: 8 },
+    columnStyles: { 3: { fontStyle: "bold" } },
     styles: { cellPadding: 2 },
   });
-  Y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
+  Y = lastY() + 4;
 
   // ── MOJAMIENTO ────────────────────────────────────────────────────────────
   doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(80, 80, 80);
-  const horaIni = ot.hora_inicio ?? "05:00";
-  const horaFin = ot.hora_fin ?? "12:00";
   doc.text(
-    `Hora: ${horaIni} – ${horaFin}   |   Mojamiento solicitado: ${ot.mojamiento_solicitado_ltha ?? "—"} lt/ha   |   Mojamiento real: ${ot.mojamiento_real_ltha ?? "___"} lt/ha`,
+    `Hora: ${ot.hora_inicio ?? "05:00"} – ${ot.hora_fin ?? "12:00"}   |   Mojamiento solicitado: ${moj ?? "—"} lt/ha   |   Mojamiento real: ${ot.mojamiento_real_ltha ?? "___"} lt/ha`,
     ML, Y
   );
-  resetText();
-  Y += 6;
+  resetText(); Y += 7;
 
-  // ── PRODUCTOS (sección principal — más visible) ───────────────────────────
-  // Rectángulo de título destacado
+  // ── PRODUCTOS ─────────────────────────────────────────────────────────────
   doc.setFillColor(26, 71, 49);
   doc.rect(ML, Y, CW, 7, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
+  doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(10);
   doc.text("PRODUCTOS A APLICAR", W / 2, Y + 4.8, { align: "center" });
-  resetText();
-  Y += 9;
+  resetText(); Y += 9;
 
   autoTable(doc, {
-    startY: Y,
-    margin: { left: ML, right: 14 },
-    head: [[
-      "N°",
-      "Producto",
-      "Ingrediente activo",
-      "Dosis real",
-      "Consumo total",
-      "Carencia\n(días)",
-      "Reingreso\n(horas)",
-      "Fecha viable\ncosecha",
-    ]],
+    startY: Y, margin: { left: ML, right: 14 },
+    head: [["N°", "Producto", "Ingrediente activo", "Dosis real", "Consumo total", "Carencia\n(días)", "Reingreso\n(horas)", "Fecha viable\ncosecha"]],
     body: ot.ot_productos.map((p, i) => {
       const unidad = p.dosis_unidad;
-      const consumoUnidad = unidad.split("/")[0] ?? "lt";
+      const unidadDisplay = p.producto.unidad_dosis || unidad.split("/")[0] || "lt";
       return [
         String(i + 1),
         p.producto.nombre_comercial,
         p.producto.ingrediente_activo ?? "—",
         `${p.dosis_real} ${unidad}`,
-        p.consumo_total !== null ? `${p.consumo_total.toFixed(2)} ${consumoUnidad}` : "—",
+        p.consumo_total != null && p.consumo_total > 0 ? `${p.consumo_total.toFixed(2)} ${unidadDisplay}` : "—",
         String(p.carencia_dias),
         String(p.rei_horas),
         fmtDate(p.fecha_viable),
       ];
     }),
-    headStyles: {
-      fillColor: [232, 245, 238],
-      textColor: [26, 71, 49],
-      fontSize: 8,
-      fontStyle: "bold",
-      lineColor: [26, 71, 49],
-      lineWidth: 0.4,
-    },
-    bodyStyles: { fontSize: 9, fontStyle: "normal" },
+    headStyles: { fillColor: [232, 245, 238], textColor: [26, 71, 49], fontSize: 8, fontStyle: "bold", lineColor: [26, 71, 49], lineWidth: 0.4 },
+    bodyStyles: { fontSize: 9 },
     columnStyles: {
-      0: { cellWidth: 8, halign: "center" },
+      0: { cellWidth: 8,  halign: "center" },
       1: { cellWidth: 40, fontStyle: "bold" },
       2: { cellWidth: 35 },
       3: { cellWidth: 22, halign: "center" },
@@ -256,101 +235,116 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
       7: { cellWidth: 22, halign: "center" },
     },
     alternateRowStyles: { fillColor: [248, 254, 251] },
-    styles: {
-      cellPadding: 2.5,
-      lineColor: [210, 220, 215],
-      lineWidth: 0.2,
-      fontSize: 9,
-    },
-    tableLineColor: [26, 71, 49],
-    tableLineWidth: 0.4,
+    styles: { cellPadding: 2.5, lineColor: [210, 220, 215], lineWidth: 0.2 },
+    tableLineColor: [26, 71, 49], tableLineWidth: 0.4,
   });
-  Y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4;
+  Y = lastY() + 4;
 
-  // Advertencia PHI si hay fecha viable
-  const maxPhi = Math.max(...ot.ot_productos.map((p) => p.carencia_dias));
+  // ── DOSIS POR MAQUINADA ───────────────────────────────────────────────────
+  const capacidad = ot.ot_aplicadores[0]?.pulverizador?.capacidad_lt ?? null;
+  if (capacidad && moj && supTotal) {
+    const litrosTotales = supTotal * moj;
+    const maqCompletas  = Math.floor(litrosTotales / capacidad);
+    const litrosSaldo   = Math.round(litrosTotales - maqCompletas * capacidad);
+    const haySaldo      = litrosSaldo > 0;
+
+    // Título
+    doc.setFillColor(232, 245, 238);
+    doc.rect(ML, Y, CW, 7, "F");
+    doc.setTextColor(26, 71, 49); doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+    doc.text("DOSIS POR MAQUINADA", W / 2, Y + 4.8, { align: "center" });
+    resetText(); Y += 9;
+
+    // Tabla de dosis por carga
+    const colMaqHeader = `Maq. completa\n(${capacidad} lt)`;
+    const colSaldoHeader = haySaldo ? `Saldo\n(${litrosSaldo} lt)` : "";
+    const heads = haySaldo
+      ? ["N°", "Producto", colMaqHeader, colSaldoHeader]
+      : ["N°", "Producto", colMaqHeader];
+
+    autoTable(doc, {
+      startY: Y, margin: { left: ML, right: 14 },
+      head: [heads],
+      body: ot.ot_productos.map((p, i) => {
+        const { dosisMaq, dosisSaldo } = dosisPorMaquinada(p.dosis_real, p.dosis_unidad, capacidad, litrosSaldo, moj!);
+        const unit = (p.producto.unidad_dosis || p.dosis_unidad.split("/")[0] || "lt");
+        const row = [
+          String(i + 1),
+          p.producto.nombre_comercial,
+          `${fmtNum(dosisMaq)} ${unit}`,
+        ];
+        if (haySaldo) row.push(dosisSaldo != null ? `${fmtNum(dosisSaldo)} ${unit}` : "—");
+        return row;
+      }),
+      headStyles: { fillColor: [232, 245, 238], textColor: [26, 71, 49], fontSize: 8, fontStyle: "bold", lineColor: [26, 71, 49], lineWidth: 0.4 },
+      bodyStyles: { fontSize: 9, fontStyle: "bold" },
+      columnStyles: {
+        0: { cellWidth: 8,  halign: "center" },
+        1: { cellWidth: 55 },
+        2: { halign: "center", textColor: [26, 71, 49] },
+        ...(haySaldo ? { 3: { halign: "center", textColor: [100, 100, 100] } } : {}),
+      },
+      alternateRowStyles: { fillColor: [248, 254, 251] },
+      styles: { cellPadding: 3, lineColor: [210, 220, 215], lineWidth: 0.2 },
+      tableLineColor: [26, 71, 49], tableLineWidth: 0.4,
+    });
+    Y = lastY() + 4;
+  }
+
+  // ── ADVERTENCIA PHI ───────────────────────────────────────────────────────
+  const maxPhi = Math.max(...ot.ot_productos.map(p => p.carencia_dias));
   if (maxPhi > 0 && ot.fecha_aplicacion) {
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(180, 60, 0);
-    doc.text(
-      `⚠  Respetar períodos de carencia. La fecha de cosecha más restrictiva aplica sobre el cuartel tratado.`,
-      ML, Y
-    );
-    resetText();
-    Y += 5;
+    doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(180, 60, 0);
+    doc.text("⚠  Respetar períodos de carencia. La fecha de cosecha más restrictiva aplica sobre el cuartel tratado.", ML, Y);
+    resetText(); Y += 5;
   }
 
   // ── PPE ───────────────────────────────────────────────────────────────────
   const ppeItems = [
-    ot.ppe_traje && "Traje",
-    ot.ppe_guantes && "Guantes",
-    ot.ppe_anteojos && "Anteojos",
-    ot.ppe_gorro && "Gorro",
-    ot.ppe_mascarilla && "Mascarilla",
-    ot.ppe_botas && "Botas",
+    ot.ppe_traje && "Traje", ot.ppe_guantes && "Guantes", ot.ppe_anteojos && "Anteojos",
+    ot.ppe_gorro && "Gorro", ot.ppe_mascarilla && "Mascarilla", ot.ppe_botas && "Botas",
   ].filter(Boolean) as string[];
 
   if (ppeItems.length) {
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(80, 80, 80);
+    doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(80, 80, 80);
     doc.text("PPE requerido:", ML, Y);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(30, 30, 30);
-    doc.text(ppeItems.join("  ·  "), ML + 25, Y);
-    Y += 5;
+    doc.setFont("helvetica", "normal"); doc.setTextColor(30, 30, 30);
+    doc.text(ppeItems.join("  ·  "), ML + 25, Y); Y += 5;
   }
 
   // ── NOTAS ─────────────────────────────────────────────────────────────────
   if (ot.notas) {
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "bold"); doc.setTextColor(80, 80, 80);
+    doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(80, 80, 80);
     doc.text("Notas:", ML, Y);
     doc.setFont("helvetica", "normal"); resetText();
-    doc.text(ot.notas, ML + 14, Y, { maxWidth: CW - 14 });
-    Y += 8;
+    doc.text(ot.notas, ML + 14, Y, { maxWidth: CW - 14 }); Y += 8;
   }
 
-  // ── FIRMAS ───────────────────────────────────────────────────────────────
-  // Espacio para firmas al final
-  const pageH = 297;
+  // ── FIRMAS ────────────────────────────────────────────────────────────────
+  const pageH  = 297;
   const firmasY = Math.max(Y + 10, pageH - 45);
-
   line(firmasY);
-  const firmas = [
-    { label: "Dosificador", nombre: ot.dosificador?.nombre ?? "" },
-    { label: "Aplicador", nombre: ot.ot_aplicadores.map((a) => a.personal?.nombre ?? a.operador?.nombre ?? "—").join(" / ") },
-    { label: "Responsable", nombre: ot.responsable?.nombre ?? "" },
-  ];
+
   const fw = CW / 3;
-
-  firmas.forEach((f, i) => {
-    const x = ML + i * fw;
+  [
+    { label: "Dosificador", nombre: ot.dosificador?.nombre ?? "" },
+    { label: "Aplicador",   nombre: ot.ot_aplicadores.map(a => a.personal?.nombre ?? a.operador?.nombre ?? "—").join(" / ") },
+    { label: "Responsable", nombre: ot.responsable?.nombre ?? "" },
+  ].forEach((f, i) => {
+    const x  = ML + i * fw;
     const cx = x + fw / 2;
-
-    // Línea de firma
-    doc.setDrawColor(100, 100, 100);
-    doc.setLineWidth(0.4);
+    doc.setDrawColor(100, 100, 100); doc.setLineWidth(0.4);
     doc.line(x + 4, firmasY + 18, x + fw - 4, firmasY + 18);
-
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "bold"); doc.setTextColor(80, 80, 80);
+    doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(80, 80, 80);
     doc.text(f.label.toUpperCase(), cx, firmasY + 22, { align: "center" });
-
-    if (f.nombre) {
-      doc.setFont("helvetica", "normal"); doc.setFontSize(8); resetText();
-      doc.text(f.nombre, cx, firmasY + 27, { align: "center" });
-    }
+    if (f.nombre) { doc.setFont("helvetica", "normal"); doc.setFontSize(8); resetText(); doc.text(f.nombre, cx, firmasY + 27, { align: "center" }); }
   });
 
-  // ── PIE DE PÁGINA ─────────────────────────────────────────────────────────
-  doc.setFontSize(7);
-  doc.setTextColor(160, 160, 160);
+  // ── PIE ───────────────────────────────────────────────────────────────────
+  doc.setFontSize(7); doc.setTextColor(160, 160, 160);
   doc.text(
     `Agro Fitosanitarios · OT N° ${ot.numero} · Generado ${new Date().toLocaleDateString("es-CL")}`,
-    W / 2, pageH - 6,
-    { align: "center" }
+    W / 2, pageH - 6, { align: "center" }
   );
 
   doc.save(`OT-${String(ot.numero).padStart(4, "0")}-${ot.empresa?.nombre?.replace(/\s+/g, "-") ?? "empresa"}.pdf`);

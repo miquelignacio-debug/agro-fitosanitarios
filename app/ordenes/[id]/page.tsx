@@ -33,7 +33,7 @@ type OTCompleta = OrdenTrabajo & {
   responsable: { nombre: string } | null;
   dosificador: { nombre: string } | null;
   ot_cuarteles: { id: string; superficie_ha: number; cuartel: { codigo: string; especie: string; variedad: string; patron: string | null } }[];
-  ot_aplicadores: { id: string; operador: { nombre: string } | null; personal: { nombre: string } | null; tractor: { codigo: string } | null; pulverizador: { codigo: string } | null; cantidad_maquinadas: number | null }[];
+  ot_aplicadores: { id: string; operador: { nombre: string } | null; personal: { nombre: string } | null; tractor: { codigo: string } | null; pulverizador: { codigo: string; capacidad_lt: number | null } | null; cantidad_maquinadas: number | null }[];
   ot_productos: OTProducto[];
 };
 
@@ -91,8 +91,8 @@ function OTDetalleContent() {
   const [showEjecucion,  setShowEjecucion]  = useState(false);
 
   const PRODUCTOS_SELECT = "id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, producto:productos(nombre_comercial, ingrediente_activo, formulacion, especies_autorizadas, unidad_dosis)";
-  const APLICADORES_SELECT_V10 = "id, cantidad_maquinadas, operador:operadores(nombre), personal:personal!personal_id(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo)";
-  const APLICADORES_SELECT_FALLBACK = "id, cantidad_maquinadas, operador:operadores(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo)";
+  const APLICADORES_SELECT_V10 = "id, cantidad_maquinadas, operador:operadores(nombre), personal:personal!personal_id(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo, capacidad_lt)";
+  const APLICADORES_SELECT_FALLBACK = "id, cantidad_maquinadas, operador:operadores(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo, capacidad_lt)";
 
   const load = async () => {
     setLoading(true);
