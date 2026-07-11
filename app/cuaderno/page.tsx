@@ -160,35 +160,38 @@ function CuadernoContent() {
     load();
   }, [empresa]);
 
+  const BASE_SELECT = `
+    id, numero, estado, fecha_aplicacion, mojamiento_real_ltha, viento_kmh, temperatura_c, plagas_objetivo, objetivo_principal,
+    empresa:empresas(nombre),
+    solicitante:personal!solicitante_id(nombre),
+    responsable:personal!responsable_id(nombre),
+    dosificador:personal!dosificador_id(nombre),
+    ot_cuarteles(superficie_ha, cuartel:cuarteles(codigo, especie, variedad, patron)),
+    ot_aplicadores(
+      personal:personal!personal_id(nombre),
+      operador:operadores(nombre),
+      tractor:maquinaria!tractor_id(codigo),
+      pulverizador:maquinaria!pulverizador_id(codigo)
+    ),
+    ot_productos(dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total,
+      producto:productos(nombre_comercial, ingrediente_activo, CONC_IAformulacion))
+  `;
+
   const load = async () => {
     setLoading(true);
     setError("");
-    const { data, error: err } = await supabase
+
+    const q = (sel: string) => supabase
       .from("ordenes_trabajo")
-      .select(`
-        id, numero, estado, fecha_aplicacion, mojamiento_real_ltha, viento_kmh, temperatura_c, plagas_objetivo, objetivo_principal,
-        empresa:empresas(nombre),
-        solicitante:personal!solicitante_id(nombre),
-        responsable:personal!responsable_id(nombre),
-        dosificador:personal!dosificador_id(nombre),
-        ot_cuarteles(
-          superficie_ha,
-          cuartel:cuarteles(codigo, especie, variedad, patron)
-        ),
-        ot_aplicadores(
-          personal:personal!personal_id(nombre),
-          operador:operadores(nombre),
-          tractor:maquinaria!tractor_id(codigo),
-          pulverizador:maquinaria!pulverizador_id(codigo)
-        ),
-        ot_productos(
-          dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total,
-          producto:productos(nombre_comercial, ingrediente_activo, concentracion_ia, formulacion)
-        )
-      `)
+      .select(sel)
       .eq("empresa_id", empresa)
       .neq("estado", "anulada")
       .order("fecha_aplicacion", { ascending: false });
+
+    let { data, error: err } = await q(BASE_SELECT.replace("CONC_IA", "concentracion_ia, "));
+    if (err?.message?.includes("concentracion_ia")) {
+      ({ data, error: err } = await q(BASE_SELECT.replace("CONC_IA", "")));
+    }
 
     setLoading(false);
     if (err) { setError(err.message); return; }
