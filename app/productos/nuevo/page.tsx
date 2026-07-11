@@ -24,6 +24,7 @@ function NuevoProductoContent() {
   const [formulacion, setFormulacion] = useState("");
   const [funciones, setFunciones] = useState<string[]>([]);
   const [unidadDosis, setUnidadDosis] = useState("lt/ha");
+  const [unidadBodega, setUnidadBodega] = useState<"lt" | "kg">("lt");
   const [phi, setPhi] = useState("0");
   const [rei, setRei] = useState("0");
   const [especiesRaw, setEspeciesRaw] = useState("");
@@ -47,6 +48,7 @@ function NuevoProductoContent() {
       numero_registro: registro.trim() || null,
       ingrediente_activo: ia.trim() || null,
       concentracion_ia: concentracionIa.trim() || null,
+      unidad_bodega: unidadBodega,
       formulacion: formulacion.trim() || null,
       tipo_funcion: funciones.length ? funciones : null,
       unidad_dosis: unidadDosis,
@@ -114,9 +116,15 @@ function NuevoProductoContent() {
           <section style={section}>
             <h2 style={sectionTitle}>Dosis y seguridad</h2>
             <div style={grid3}>
-              <Field label="Unidad de dosis">
+              <Field label="Unidad de dosis (OT)">
                 <select value={unidadDosis} onChange={(e) => setUnidadDosis(e.target.value)} style={inputStyle}>
                   {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </Field>
+              <Field label="Unidad de bodega *">
+                <select value={unidadBodega} onChange={(e) => setUnidadBodega(e.target.value as "lt" | "kg")} style={inputStyle}>
+                  <option value="lt">Litros (Lt)</option>
+                  <option value="kg">Kilos (Kg)</option>
                 </select>
               </Field>
               <Field label="PHI (días carencia)">

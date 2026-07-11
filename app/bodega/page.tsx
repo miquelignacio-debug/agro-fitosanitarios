@@ -13,13 +13,11 @@ type StockRow = {
   cantidad_disponible: number;
 };
 
-function displayStock(cantidad: number, unidadDosis: string | null): string {
-  const raw = (unidadDosis || "").split("/")[0].trim().toLowerCase();
+function displayStock(cantidad: number, unidadBodega: "lt" | "kg" | null): string {
   const fmt = (n: number) => n.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 3 });
-  if (raw === "cc" || raw === "ml") return `${fmt(cantidad / 1000)} Lt`;
-  if (raw === "g")                  return `${fmt(cantidad / 1000)} Kg`;
-  if (raw === "kg")                 return `${fmt(cantidad)} Kg`;
-  return `${fmt(cantidad)} Lt`; // lt, l, vacío, o cualquier otro → Lt
+  if (unidadBodega === "kg") return `${fmt(cantidad)} Kg`;
+  if (unidadBodega === "lt") return `${fmt(cantidad)} Lt`;
+  return `${fmt(cantidad)} ?`; // unidad_bodega no definida → indica que hay que actualizar la ficha
 }
 
 type TransfForm = {
@@ -283,7 +281,7 @@ function BodegaContent() {
                     <option value="">— Seleccionar producto —</option>
                     {stockOrigen.filter(s => Number(s.cantidad_disponible) > 0).map(s => (
                       <option key={s.producto_id} value={s.producto_id}>
-                        {s.producto.nombre_comercial} — {displayStock(Number(s.cantidad_disponible), s.producto.unidad_dosis)} disponibles
+                        {s.producto.nombre_comercial} — {displayStock(Number(s.cantidad_disponible), s.producto.unidad_bodega)} disponibles
                       </option>
                     ))}
                   </select>
@@ -292,7 +290,7 @@ function BodegaContent() {
                     if (!row) return null;
                     return (
                       <p style={{ fontSize: "12px", color: "#15803d", marginTop: "4px" }}>
-                        Stock disponible: {displayStock(Number(row.cantidad_disponible), row.producto.unidad_dosis)}
+                        Stock disponible: {displayStock(Number(row.cantidad_disponible), row.producto.unidad_bodega)}
                       </p>
                     );
                   })()}
@@ -391,7 +389,7 @@ function BodegaContent() {
                       <td style={td}>{s.producto.ingrediente_activo || "—"}</td>
                       <td style={td}>{s.producto.tipo_funcion?.join(", ") || "—"}</td>
                       <td style={{ ...td, fontWeight: 700, color: bajo ? "#dc2626" : "#15803d" }}>
-                        {displayStock(Number(s.cantidad_disponible), s.producto.unidad_dosis)}
+                        {displayStock(Number(s.cantidad_disponible), s.producto.unidad_bodega)}
                       </td>
                       <td style={td}>
                         {bajo && (

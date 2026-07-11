@@ -87,6 +87,12 @@ function IngresoContent() {
   };
 
   const productoSel = productos.find((p) => p.id === productoId);
+  // Cuando cambia el producto, actualizar unidad al unidad_bodega definida
+  const handleProductoChange = (id: string) => {
+    setProductoId(id);
+    const prod = productos.find(p => p.id === id);
+    if (prod?.unidad_bodega) setUnidad(prod.unidad_bodega);
+  };
 
   return (
     <>
@@ -187,7 +193,7 @@ function IngresoContent() {
                 productosFiltrados.map((p) => (
                   <div
                     key={p.id}
-                    onClick={() => { setProductoId(p.id); setBusqueda(p.nombre_comercial); }}
+                    onClick={() => { handleProductoChange(p.id); setBusqueda(p.nombre_comercial); }}
                     style={{
                       ...prodRow,
                       ...(productoId === p.id ? prodRowActive : {}),

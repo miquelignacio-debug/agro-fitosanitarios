@@ -26,6 +26,7 @@ function EditarProductoContent() {
   const [formulacion, setFormulacion] = useState("");
   const [funciones, setFunciones] = useState<string[]>([]);
   const [unidadDosis, setUnidadDosis] = useState("lt/ha");
+  const [unidadBodega, setUnidadBodega] = useState<"lt" | "kg" | "">("lt");
   const [phi, setPhi] = useState("0");
   const [rei, setRei] = useState("0");
   const [especiesRaw, setEspeciesRaw] = useState("");
@@ -53,6 +54,7 @@ function EditarProductoContent() {
       setFormulacion(data.formulacion || "");
       setFunciones(data.tipo_funcion || []);
       setUnidadDosis(data.unidad_dosis || "lt/ha");
+      setUnidadBodega(data.unidad_bodega || "lt");
       setPhi(String(data.phi_dias ?? 0));
       setRei(String(data.rei_horas ?? 0));
       setEspeciesRaw((data.especies_autorizadas || []).join("\n"));
@@ -85,6 +87,7 @@ function EditarProductoContent() {
       formulacion: formulacion.trim() || null,
       tipo_funcion: funciones.length ? funciones : null,
       unidad_dosis: unidadDosis,
+      unidad_bodega: unidadBodega || null,
       phi_dias: parseInt(phi) || 0,
       rei_horas: parseInt(rei) || 0,
       especies_autorizadas: especies.length ? especies : null,
@@ -164,9 +167,15 @@ function EditarProductoContent() {
           <section style={section}>
             <h2 style={sectionTitle}>Dosis y seguridad</h2>
             <div style={grid3}>
-              <Field label="Unidad de dosis">
+              <Field label="Unidad de dosis (OT)">
                 <select value={unidadDosis} onChange={(e) => setUnidadDosis(e.target.value)} style={inputStyle}>
                   {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </Field>
+              <Field label="Unidad de bodega *">
+                <select value={unidadBodega} onChange={(e) => setUnidadBodega(e.target.value as "lt" | "kg")} style={inputStyle}>
+                  <option value="lt">Litros (Lt)</option>
+                  <option value="kg">Kilos (Kg)</option>
                 </select>
               </Field>
               <Field label="PHI (días carencia)">
