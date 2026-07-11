@@ -27,6 +27,7 @@ type OTParaPDF = OrdenTrabajo & {
     producto: {
       nombre_comercial: string;
       ingrediente_activo: string | null;
+      concentracion_ia?: string | null;
       formulacion: string | null;
       especies_autorizadas: string[] | null;
       unidad_dosis?: string | null;
@@ -214,7 +215,9 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
       return [
         String(i + 1),
         p.producto.nombre_comercial,
-        p.producto.ingrediente_activo ?? "—",
+        p.producto.ingrediente_activo
+          ? `${p.producto.ingrediente_activo}${p.producto.concentracion_ia ? ` (${p.producto.concentracion_ia})` : ""}`
+          : "—",
         `${p.dosis_real} ${unidad}`,
         p.consumo_total != null && p.consumo_total > 0 ? `${p.consumo_total.toFixed(2)} ${unidadDisplay}` : "—",
         String(p.carencia_dias),

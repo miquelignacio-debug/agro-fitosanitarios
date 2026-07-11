@@ -71,6 +71,7 @@ export type Producto = {
   phi_dias: number;
   rei_horas: number;
   especies_autorizadas: string[] | null;
+  concentracion_ia: string | null;
   max_ia_descripcion: string | null;
   activo: boolean;
   fuente: "sag" | "manual";

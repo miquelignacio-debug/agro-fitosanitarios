@@ -1,21 +1,23 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { FUNCIONES_FITOSANITARIAS } from "@/lib/types";
+import { Suspense } from "react";
 
 const UNIDADES = ["lt/ha", "cc/ha", "kg/ha", "g/ha", "g/100lt", "cc/100lt", "lt/100lt"];
 
-import { Suspense } from "react";
-function NuevoProductoContent() {
+function EditarProductoContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const empresa = searchParams.get("empresa") || "";
+  const params = useParams();
+  const id = params.id as string;
 
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [notFound, setNotFound] = useState(false);
 
   const [nombre, setNombre] = useState("");
   const [registro, setRegistro] = useState("");
@@ -28,6 +30,39 @@ function NuevoProductoContent() {
   const [rei, setRei] = useState("0");
   const [especiesRaw, setEspeciesRaw] = useState("");
   const [maxIa, setMaxIa] = useState("");
+  const [precioCosto, setPrecioCosto] = useState("");
+  const [stockMinimo, setStockMinimo] = useState("");
+
+  useEffect(() => {
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push("/login"); return; }
+
+      const { data, error: err } = await supabase
+        .from("productos")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (err || !data) { setNotFound(true); setLoading(false); return; }
+
+      setNombre(data.nombre_comercial || "");
+      setRegistro(data.numero_registro || "");
+      setIa(data.ingrediente_activo || "");
+      setConcentracionIa(data.concentracion_ia || "");
+      setFormulacion(data.formulacion || "");
+      setFunciones(data.tipo_funcion || []);
+      setUnidadDosis(data.unidad_dosis || "lt/ha");
+      setPhi(String(data.phi_dias ?? 0));
+      setRei(String(data.rei_horas ?? 0));
+      setEspeciesRaw((data.especies_autorizadas || []).join("\n"));
+      setMaxIa(data.max_ia_descripcion || "");
+      setPrecioCosto(data.precio_costo != null ? String(data.precio_costo) : "");
+      setStockMinimo(data.stock_minimo != null ? String(data.stock_minimo) : "");
+      setLoading(false);
+    };
+    init();
+  }, [id]);
 
   const toggleFuncion = (f: string) =>
     setFunciones((prev) => prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]);
@@ -42,7 +77,7 @@ function NuevoProductoContent() {
       .map((s) => s.trim())
       .filter(Boolean);
 
-    const { error: err } = await supabase.from("productos").insert({
+    const { error: err } = await supabase.from("productos").update({
       nombre_comercial: nombre.trim(),
       numero_registro: registro.trim() || null,
       ingrediente_activo: ia.trim() || null,
@@ -54,22 +89,37 @@ function NuevoProductoContent() {
       rei_horas: parseInt(rei) || 0,
       especies_autorizadas: especies.length ? especies : null,
       max_ia_descripcion: maxIa.trim() || null,
-      fuente: "manual",
-    });
+      precio_costo: precioCosto ? parseFloat(precioCosto) : null,
+      stock_minimo: stockMinimo ? parseFloat(stockMinimo) : 0,
+    }).eq("id", id);
 
     setSaving(false);
     if (err) { setError(err.message); return; }
-    router.push(`/productos${empresa ? `?empresa=${empresa}` : ""}`);
+    router.push("/productos");
   };
+
+  if (loading) return (
+    <>
+      <Nav />
+      <main style={container}><p style={{ color: "#6b7280" }}>Cargando...</p></main>
+    </>
+  );
+
+  if (notFound) return (
+    <>
+      <Nav />
+      <main style={container}><p style={{ color: "#dc2626" }}>Producto no encontrado.</p></main>
+    </>
+  );
 
   return (
     <>
-      <Nav empresaId={empresa} />
+      <Nav />
       <main style={container}>
         <div style={pageHeader}>
           <div>
-            <h1 style={pageTitle}>Nuevo producto</h1>
-            <p style={pageSubtitle}>Ingreso manual al catálogo</p>
+            <h1 style={pageTitle}>Editar producto</h1>
+            <p style={pageSubtitle}>{nombre}</p>
           </div>
         </div>
 
@@ -143,18 +193,26 @@ function NuevoProductoContent() {
             </Field>
           </section>
 
+          <section style={section}>
+            <h2 style={sectionTitle}>Precio y stock</h2>
+            <div style={grid2}>
+              <Field label="Precio costo ($/unidad)">
+                <input type="number" min="0" step="0.01" value={precioCosto} onChange={(e) => setPrecioCosto(e.target.value)} style={inputStyle} placeholder="0.00" />
+              </Field>
+              <Field label="Stock mínimo (unidad)">
+                <input type="number" min="0" step="0.1" value={stockMinimo} onChange={(e) => setStockMinimo(e.target.value)} style={inputStyle} placeholder="0" />
+              </Field>
+            </div>
+          </section>
+
           {error && <p style={errorStyle}>{error}</p>}
 
           <div style={footer}>
-            <button
-              type="button"
-              onClick={() => router.push(`/productos${empresa ? `?empresa=${empresa}` : ""}`)}
-              style={cancelBtn}
-            >
+            <button type="button" onClick={() => router.push("/productos")} style={cancelBtn}>
               Cancelar
             </button>
             <button onClick={handleSave} style={saveBtn} disabled={saving}>
-              {saving ? "Guardando..." : "Guardar producto"}
+              {saving ? "Guardando..." : "Guardar cambios"}
             </button>
           </div>
         </div>
@@ -190,4 +248,5 @@ const footer: React.CSSProperties = { padding: "20px 28px", display: "flex", jus
 const errorStyle: React.CSSProperties = { margin: "0 28px 12px", fontSize: "13px", color: "#dc2626", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "8px", padding: "10px 14px" };
 const cancelBtn: React.CSSProperties = { padding: "9px 20px", borderRadius: "8px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "14px", cursor: "pointer" };
 const saveBtn: React.CSSProperties = { padding: "9px 20px", borderRadius: "8px", background: "#1a4731", color: "#fff", fontWeight: 700, fontSize: "14px", border: "none", cursor: "pointer" };
-export default function NuevoProductoPage() { return <Suspense><NuevoProductoContent /></Suspense>; }
+
+export default function EditarProductoPage() { return <Suspense><EditarProductoContent /></Suspense>; }

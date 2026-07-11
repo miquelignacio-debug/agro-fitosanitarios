@@ -157,13 +157,16 @@ export default function ProductosPage() {
                       </span>
                     </td>
                     <td style={td}>
-                      <button style={editLink} onClick={() => setEditPrecios({
-                        id: p.id, nombre: p.nombre_comercial,
-                        precio: p.precio_costo != null ? String(p.precio_costo) : "",
-                        minimo: p.stock_minimo != null ? String(p.stock_minimo) : "",
-                      })}>
-                        $ Precio / Mín.
-                      </button>
+                      <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                        <Link href={`/productos/${p.id}`} style={editLink}>Editar</Link>
+                        <button style={editLink} onClick={() => setEditPrecios({
+                          id: p.id, nombre: p.nombre_comercial,
+                          precio: p.precio_costo != null ? String(p.precio_costo) : "",
+                          minimo: p.stock_minimo != null ? String(p.stock_minimo) : "",
+                        })}>
+                          $ Precio / Mín.
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

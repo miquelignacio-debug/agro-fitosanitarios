@@ -32,7 +32,7 @@ type OTRaw = {
     rei_horas: number;
     fecha_viable: string | null;
     consumo_total: number | null;
-    producto: { nombre_comercial: string; ingrediente_activo: string | null; formulacion: string | null } | null;
+    producto: { nombre_comercial: string; ingrediente_activo: string | null; concentracion_ia: string | null; formulacion: string | null } | null;
   }[];
 };
 
@@ -49,6 +49,7 @@ type Fila = {
   sup_total: number;
   producto: string;
   ia: string;
+  concentracion_ia: string;
   formulacion: string;
   dosis_real: number;
   unidad_dosis: string;
@@ -98,6 +99,7 @@ function flattenOTs(ots: OTRaw[]): Fila[] {
           sup_total: supTotal,
           producto: op.producto.nombre_comercial,
           ia: op.producto.ingrediente_activo ?? "",
+          concentracion_ia: op.producto.concentracion_ia ?? "",
           formulacion: op.producto.formulacion ?? "",
           dosis_real: op.dosis_real,
           unidad_dosis: op.dosis_unidad,
@@ -157,7 +159,7 @@ function CuadernoContent() {
         ),
         ot_productos(
           dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total,
-          producto:productos(nombre_comercial, ingrediente_activo, formulacion)
+          producto:productos(nombre_comercial, ingrediente_activo, concentracion_ia, formulacion)
         )
       `)
       .eq("empresa_id", empresa)
@@ -363,7 +365,9 @@ function CuadernoContent() {
                       <td style={{ ...td, textAlign: "right" }}>{f.sup_cuartel.toFixed(2)}</td>
                       <td style={{ ...td, textAlign: "right" }}>{f.sup_total.toFixed(2)}</td>
                       <td style={{ ...td, fontWeight: 600, maxWidth: "180px" }}>{f.producto}</td>
-                      <td style={{ ...td, fontSize: "12px", color: "#6b7280" }}>{f.ia}</td>
+                      <td style={{ ...td, fontSize: "12px", color: "#6b7280" }}>
+                        {f.ia}{f.concentracion_ia ? ` (${f.concentracion_ia})` : ""}
+                      </td>
                       <td style={{ ...td, textAlign: "right" }}>{f.dosis_real} {f.unidad_dosis}</td>
                       <td style={{ ...td, textAlign: "right" }}>
                         {f.consumo_ot !== null ? `${f.consumo_ot} ${f.unidad_dosis.split("/")[0]}` : "—"}

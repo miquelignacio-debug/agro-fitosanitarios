@@ -21,6 +21,7 @@ type OTProducto = {
   producto: {
     nombre_comercial: string;
     ingrediente_activo: string | null;
+    concentracion_ia: string | null;
     formulacion: string | null;
     especies_autorizadas: string[] | null;
     unidad_dosis: string | null;
@@ -90,7 +91,7 @@ function OTDetalleContent() {
   const [enjuage,        setEnjuage]        = useState("");
   const [showEjecucion,  setShowEjecucion]  = useState(false);
 
-  const PRODUCTOS_SELECT = "id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, producto:productos(nombre_comercial, ingrediente_activo, formulacion, especies_autorizadas, unidad_dosis)";
+  const PRODUCTOS_SELECT = "id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, producto:productos(nombre_comercial, ingrediente_activo, concentracion_ia, formulacion, especies_autorizadas, unidad_dosis)";
   const APLICADORES_SELECT_V10 = "id, cantidad_maquinadas, operador:operadores(nombre), personal:personal!personal_id(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo, capacidad_lt)";
   const APLICADORES_SELECT_FALLBACK = "id, cantidad_maquinadas, operador:operadores(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo, capacidad_lt)";
 
@@ -231,19 +232,11 @@ function OTDetalleContent() {
 
     if (movsError) { setTransError(`Error al buscar movimientos: ${movsError.message}`); setTransitioning(false); return; }
 
-    // Insertar reversiones como ajuste_entrada
+    // Eliminar los movimientos de salida de esta OT
     if (movs && movs.length > 0) {
-      const reversiones = movs.map((m: { empresa_id: string; producto_id: string; cantidad: number; unidad: string; fecha: string }) => ({
-        empresa_id:  m.empresa_id,
-        producto_id: m.producto_id,
-        tipo:        "ajuste_entrada" as const,
-        cantidad:    m.cantidad,
-        unidad:      m.unidad,
-        fecha:       new Date().toISOString().slice(0, 10),
-        notas:       `Reversión por reapertura de OT #${ot.numero}`,
-      }));
-      const { error: revError } = await supabase.from("stock_movimientos").insert(reversiones);
-      if (revError) { setTransError(`Error al revertir stock: ${revError.message}`); setTransitioning(false); return; }
+      const ids = movs.map((m: { id: string }) => m.id);
+      const { error: delErr } = await supabase.from("stock_movimientos").delete().in("id", ids);
+      if (delErr) { setTransError(`Error al revertir stock: ${delErr.message}`); setTransitioning(false); return; }
     }
 
     // Limpiar datos de ejecución y volver a en_ejecucion
@@ -287,16 +280,8 @@ function OTDetalleContent() {
         .eq("tipo", "salida");
 
       if (movs && movs.length > 0) {
-        const reversiones = movs.map((m: { empresa_id: string; producto_id: string; cantidad: number; unidad: string }) => ({
-          empresa_id:  m.empresa_id,
-          producto_id: m.producto_id,
-          tipo:        "ajuste_entrada" as const,
-          cantidad:    m.cantidad,
-          unidad:      m.unidad,
-          fecha:       new Date().toISOString().slice(0, 10),
-          notas:       `Reversión por eliminación de OT #${ot.numero}`,
-        }));
-        const { error: revError } = await supabase.from("stock_movimientos").insert(reversiones);
+        const ids = movs.map((m: { id: string }) => m.id);
+        const { error: revError } = await supabase.from("stock_movimientos").delete().in("id", ids);
         if (revError) { setTransError(`Error al revertir stock: ${revError.message}`); setTransitioning(false); return; }
       }
     }
@@ -534,7 +519,10 @@ function OTDetalleContent() {
                   <div key={p.id} style={{ ...tableRow, flexDirection: "column", alignItems: "flex-start", gap: "4px" }}>
                     <div style={{ fontWeight: 700 }}>{p.producto.nombre_comercial}</div>
                     {p.producto.ingrediente_activo && (
-                      <div style={{ fontSize: "12px", color: "#6b7280" }}>{p.producto.ingrediente_activo}</div>
+                      <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                        {p.producto.ingrediente_activo}
+                        {p.producto.concentracion_ia && ` (${p.producto.concentracion_ia})`}
+                      </div>
                     )}
                     <div style={{ display: "flex", gap: "16px", fontSize: "13px", marginTop: "2px", flexWrap: "wrap" }}>
                       <span>Dosis: <strong>{p.dosis_real} {p.dosis_unidad}</strong></span>
