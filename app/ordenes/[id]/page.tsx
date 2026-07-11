@@ -14,7 +14,7 @@ type OTCompleta = OrdenTrabajo & {
   responsable: { nombre: string } | null;
   dosificador: { nombre: string } | null;
   ot_cuarteles: { id: string; superficie_ha: number; cuartel: { codigo: string; especie: string; variedad: string; patron: string | null } }[];
-  ot_aplicadores: { id: string; operador: { nombre: string }; tractor: { codigo: string } | null; pulverizador: { codigo: string } | null; cantidad_maquinadas: number | null }[];
+  ot_aplicadores: { id: string; operador: { nombre: string } | null; personal: { nombre: string } | null; tractor: { codigo: string } | null; pulverizador: { codigo: string } | null; cantidad_maquinadas: number | null }[];
   ot_productos: { id: string; producto_id: string; dosis_real: number; dosis_unidad: string; carencia_dias: number; rei_horas: number; fecha_viable: string | null; consumo_total: number | null; producto: { nombre_comercial: string; ingrediente_activo: string | null; formulacion: string | null; especies_autorizadas: string[] | null } }[];
 };
 
@@ -66,7 +66,7 @@ function OTDetalleContent() {
         responsable:personal!responsable_id(nombre),
         dosificador:personal!dosificador_id(nombre),
         ot_cuarteles(id, superficie_ha, cuartel:cuarteles(codigo, especie, variedad, patron)),
-        ot_aplicadores(id, cantidad_maquinadas, operador:operadores(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo)),
+        ot_aplicadores(id, cantidad_maquinadas, operador:operadores(nombre), personal:personal(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo)),
         ot_productos(id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, producto:productos(nombre_comercial, ingrediente_activo, formulacion, especies_autorizadas))
       `)
       .eq("id", params.id)
@@ -256,7 +256,7 @@ function OTDetalleContent() {
               {ot.ot_aplicadores.map((a) => (
                 <div key={a.id} style={tableRow}>
                   <div>
-                    <div style={{ fontWeight: 600 }}>{a.operador.nombre}</div>
+                    <div style={{ fontWeight: 600 }}>{a.personal?.nombre ?? a.operador?.nombre ?? "—"}</div>
                     <div style={{ fontSize: "12px", color: "#6b7280" }}>
                       {a.tractor?.codigo && `Tractor: ${a.tractor.codigo}`}
                       {a.pulverizador?.codigo && ` · Implemento: ${a.pulverizador.codigo}`}

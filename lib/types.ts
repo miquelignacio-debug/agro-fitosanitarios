@@ -165,14 +165,16 @@ export type OtCuartelConDetalle = OtCuartel & {
 export type OtAplicador = {
   id: string;
   ot_id: string;
-  operador_id: string;
+  operador_id: string | null;
+  personal_id: string | null;
   tractor_id: string | null;
   pulverizador_id: string | null;
   cantidad_maquinadas: number | null;
 };
 
 export type OtAplicadorConDetalle = OtAplicador & {
-  operador: Operador;
+  operador?: Operador;
+  personal?: Personal;
   tractor?: Maquinaria;
   pulverizador?: Maquinaria;
 };

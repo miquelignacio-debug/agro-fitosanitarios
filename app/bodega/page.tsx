@@ -24,6 +24,9 @@ function BodegaContent() {
   const [movimientos, setMovimientos] = useState<StockMovimiento[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"stock" | "movimientos">("stock");
+  const [stockSearch,  setStockSearch]  = useState("");
+  const [stockFuncion, setStockFuncion] = useState("");
+  const [stockBajo,    setStockBajo]    = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -66,6 +69,22 @@ function BodegaContent() {
   };
 
   const empresa = empresas.find((e) => e.id === empresaId);
+
+  const funcionesDisponibles = Array.from(
+    new Set(stock.flatMap(s => s.producto.tipo_funcion || []))
+  ).sort();
+
+  const esBajoStock = (s: StockRow) => {
+    const min = s.producto.stock_minimo != null ? s.producto.stock_minimo : 5;
+    return Number(s.cantidad_disponible) < min;
+  };
+
+  const stockFiltrado = stock.filter(s => {
+    const matchSearch  = !stockSearch  || s.producto.nombre_comercial.toLowerCase().includes(stockSearch.toLowerCase());
+    const matchFuncion = !stockFuncion || s.producto.tipo_funcion?.includes(stockFuncion);
+    const matchBajo    = !stockBajo    || esBajoStock(s);
+    return matchSearch && matchFuncion && matchBajo;
+  });
 
   const tipoLabel: Record<string, string> = {
     entrada: "Entrada",
@@ -138,7 +157,27 @@ function BodegaContent() {
         {loading ? (
           <p style={{ color: "#6b7280", marginTop: "20px" }}>Cargando...</p>
         ) : tab === "stock" ? (
-          <div style={{ overflowX: "auto" }}>
+          <>
+            <div style={{ display: "flex", gap: "10px", marginBottom: "14px", flexWrap: "wrap", alignItems: "center" }}>
+              <input
+                placeholder="Buscar producto..."
+                value={stockSearch}
+                onChange={e => setStockSearch(e.target.value)}
+                style={filterInput}
+              />
+              <select value={stockFuncion} onChange={e => setStockFuncion(e.target.value)} style={filterSelect}>
+                <option value="">Todas las funciones</option>
+                {funcionesDisponibles.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+              <label style={filterLabel}>
+                <input type="checkbox" checked={stockBajo} onChange={e => setStockBajo(e.target.checked)} />
+                Solo bajo stock
+              </label>
+              {(stockSearch || stockFuncion || stockBajo) && (
+                <span style={{ fontSize: "12px", color: "#6b7280" }}>{stockFiltrado.length} / {stock.length} productos</span>
+              )}
+            </div>
+            <div style={{ overflowX: "auto" }}>
             <table style={table}>
               <thead>
                 <tr>
@@ -148,8 +187,8 @@ function BodegaContent() {
                 </tr>
               </thead>
               <tbody>
-                {stock.map((s) => {
-                  const bajo = s.cantidad_disponible < 5;
+                {stockFiltrado.map((s) => {
+                  const bajo = esBajoStock(s);
                   return (
                     <tr key={s.producto_id}>
                       <td style={{ ...td, fontWeight: 700 }}>{s.producto.nombre_comercial}</td>
@@ -176,7 +215,8 @@ function BodegaContent() {
                 )}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={table}>
@@ -254,5 +294,8 @@ const tabBtnActive: React.CSSProperties = { background: "#1a4731", color: "#fff"
 const table: React.CSSProperties = { width: "100%", background: "#fff", borderRadius: "14px", overflow: "hidden", border: "1px solid #e5e7eb" };
 const th: React.CSSProperties = { padding: "10px 12px", background: "#f0f4f2", fontWeight: 700, fontSize: "12px", color: "#374151", textAlign: "left", whiteSpace: "nowrap", borderBottom: "1px solid #e5e7eb" };
 const td: React.CSSProperties = { padding: "10px 12px", fontSize: "13px", color: "#374151", borderBottom: "1px solid #f3f4f6" };
-const alertaBadge: React.CSSProperties = { padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 700, background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5" };
+const alertaBadge: React.CSSProperties  = { padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 700, background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5" };
+const filterInput: React.CSSProperties  = { padding: "7px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "13px", background: "#fff", minWidth: "200px" };
+const filterSelect: React.CSSProperties = { padding: "7px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "13px", background: "#fff" };
+const filterLabel: React.CSSProperties  = { display: "flex", gap: "6px", alignItems: "center", fontSize: "13px", cursor: "pointer", fontWeight: 500, color: "#374151" };
 import { Suspense } from "react"; export default function BodegaPage() { return <Suspense><BodegaContent /></Suspense>; }

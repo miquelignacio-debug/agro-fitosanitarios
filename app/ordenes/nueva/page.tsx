@@ -4,53 +4,53 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
-import type { Empresa, Cuartel, Operador, Maquinaria, Producto, Personal } from "@/lib/types";
+import type { Empresa, Cuartel, Maquinaria, Producto, Personal } from "@/lib/types";
 import { FUNCIONES_FITOSANITARIAS } from "@/lib/types";
 
-type CuartelRow    = { cuartel_id: string; superficie_ha: string };
-type AplicadorRow  = { operador_id: string; tractor_id: string; pulverizador_id: string; cantidad_maquinadas: string };
-type ProductoRow   = { producto_id: string; dosis_real: string; dosis_unidad: string; carencia_dias: string; rei_horas: string; consumo_total: string };
-type CatalogPlaga  = { id: string; nombre: string; tipo: string; activo: boolean };
+type CuartelRow   = { cuartel_id: string; superficie_ha: string };
+type AplicadorRow = { personal_id: string; tractor_id: string; pulverizador_id: string; cantidad_maquinadas: string };
+type ProductoRow  = { producto_id: string; dosis_real: string; dosis_unidad: string; carencia_dias: string; rei_horas: string; consumo_total: string };
+type CatalogPlaga = { id: string; nombre: string; tipo: string; activo: boolean };
 
 import { Suspense } from "react";
 function NuevaOTContent() {
-  const router      = useRouter();
+  const router       = useRouter();
   const searchParams = useSearchParams();
-  const empresaId   = searchParams.get("empresa") || "";
+  const empresaId    = searchParams.get("empresa") || "";
 
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState("");
 
   // Catálogos
-  const [empresas,       setEmpresas]       = useState<Empresa[]>([]);
-  const [cuarteles,      setCuarteles]      = useState<Cuartel[]>([]);
-  const [operadores,     setOperadores]     = useState<Operador[]>([]);
-  const [tractores,      setTractores]      = useState<Maquinaria[]>([]);
-  const [implementos,    setImplementos]    = useState<Maquinaria[]>([]);
-  const [productos,      setProductos]      = useState<Producto[]>([]);
-  const [personal,       setPersonal]       = useState<Personal[]>([]);
-  const [catalogPlagas,  setCatalogPlagas]  = useState<CatalogPlaga[]>([]);
+  const [empresas,      setEmpresas]      = useState<Empresa[]>([]);
+  const [cuarteles,     setCuarteles]     = useState<Cuartel[]>([]);
+  const [tractores,     setTractores]     = useState<Maquinaria[]>([]);
+  const [implementos,   setImplementos]   = useState<Maquinaria[]>([]);
+  const [productos,     setProductos]     = useState<Producto[]>([]);
+  const [personal,      setPersonal]      = useState<Personal[]>([]);
+  const [catalogPlagas, setCatalogPlagas] = useState<CatalogPlaga[]>([]);
+  const [stockProductoIds, setStockProductoIds] = useState<Set<string>>(new Set());
 
   // Cabecera
-  const [empresa,         setEmpresa]         = useState(empresaId);
-  const [fechaSolicitud,  setFechaSolicitud]  = useState(new Date().toISOString().slice(0, 10));
-  const [fechaAplicacion, setFechaAplicacion] = useState("");
-  const [horaInicio,      setHoraInicio]      = useState("05:00");
-  const [horaFin,         setHoraFin]         = useState("12:00");
-  const [solicitanteId,   setSolicitanteId]   = useState("");
-  const [responsableId,   setResponsableId]   = useState("");
-  const [dosificadorId,   setDosificadorId]   = useState("");
-  const [funciones,       setFunciones]       = useState<string[]>([]);
-  const [plagasObjetivo,  setPlagasObjetivo]  = useState<string[]>([]);
+  const [empresa,           setEmpresa]           = useState(empresaId);
+  const [fechaSolicitud,    setFechaSolicitud]     = useState(new Date().toISOString().slice(0, 10));
+  const [fechaAplicacion,   setFechaAplicacion]   = useState("");
+  const [horaInicio,        setHoraInicio]         = useState("05:00");
+  const [horaFin,           setHoraFin]            = useState("12:00");
+  const [solicitanteId,     setSolicitanteId]      = useState("");
+  const [responsableId,     setResponsableId]      = useState("");
+  const [dosificadorId,     setDosificadorId]      = useState("");
+  const [funciones,         setFunciones]          = useState<string[]>([]);
+  const [plagasObjetivo,    setPlagasObjetivo]     = useState<string[]>([]);
   const [objetivoPrincipal, setObjetivoPrincipal] = useState("");
-  const [mojamientoSol,   setMojamientoSol]   = useState("");
-  const [notas,           setNotas]           = useState("");
+  const [mojamientoSol,     setMojamientoSol]      = useState("");
+  const [notas,             setNotas]              = useState("");
 
   // Filas dinámicas
-  const [cuartelesOT,  setCuartelesOT]  = useState<CuartelRow[]>([{ cuartel_id: "", superficie_ha: "" }]);
-  const [aplicadoresOT, setAplicadoresOT] = useState<AplicadorRow[]>([{ operador_id: "", tractor_id: "", pulverizador_id: "", cantidad_maquinadas: "" }]);
-  const [productosOT,  setProductosOT]  = useState<ProductoRow[]>([{ producto_id: "", dosis_real: "", dosis_unidad: "lt/ha", carencia_dias: "", rei_horas: "", consumo_total: "" }]);
+  const [cuartelesOT, setCuartelesOT] = useState<CuartelRow[]>([{ cuartel_id: "", superficie_ha: "" }]);
+  const [aplicadorOT, setAplicadorOT] = useState<AplicadorRow>({ personal_id: "", tractor_id: "", pulverizador_id: "", cantidad_maquinadas: "" });
+  const [productosOT, setProductosOT] = useState<ProductoRow[]>([{ producto_id: "", dosis_real: "", dosis_unidad: "lt/ha", carencia_dias: "", rei_horas: "", consumo_total: "" }]);
 
   // PPE
   const [ppe, setPpe] = useState({ traje: false, guantes: false, anteojos: false, gorro: false, mascarilla: false, botas: false });
@@ -62,11 +62,10 @@ function NuevaOTContent() {
       if (!user) { router.push("/login"); return; }
 
       const [
-        { data: emp }, { data: cua }, { data: op }, { data: mac }, { data: prod }, { data: pers }, { data: plagas },
+        { data: emp }, { data: cua }, { data: mac }, { data: prod }, { data: pers }, { data: plagas },
       ] = await Promise.all([
         supabase.from("empresas").select("*").order("nombre"),
         supabase.from("cuarteles").select("*").eq("activo", true).order("codigo"),
-        supabase.from("operadores").select("*").eq("activo", true).order("nombre"),
         supabase.from("maquinaria").select("*").eq("activo", true).order("codigo"),
         supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(5000),
         supabase.from("personal").select("*").eq("activo", true).order("nombre"),
@@ -75,28 +74,51 @@ function NuevaOTContent() {
 
       setEmpresas((emp as Empresa[]) || []);
       setCuarteles((cua as Cuartel[]) || []);
-      setOperadores((op as Operador[]) || []);
       const maq = (mac as Maquinaria[]) || [];
       setTractores(maq.filter(m => m.tipo === "tractor"));
       setImplementos(maq.filter(m => m.tipo === "implemento"));
       setProductos((prod as Producto[]) || []);
       setPersonal((pers as Personal[]) || []);
       setCatalogPlagas((plagas as CatalogPlaga[]) || []);
-      if (!empresa && emp?.length) setEmpresa(emp[0].id);
+      if (!empresa && emp?.length) setEmpresa((emp as Empresa[])[0].id);
       setLoading(false);
     };
     init();
   }, []);
+
+  // ── Stock disponible por empresa ───────────────────────────────────────────
+  useEffect(() => {
+    if (!empresa) { setStockProductoIds(new Set()); return; }
+    setStockProductoIds(new Set());
+    supabase.from("stock_actual")
+      .select("producto_id")
+      .eq("empresa_id", empresa)
+      .then(({ data }) => {
+        setStockProductoIds(new Set(((data || []) as { producto_id: string }[]).map(r => r.producto_id)));
+      });
+  }, [empresa]);
 
   // ── Computed ───────────────────────────────────────────────────────────────
   const cuartelesPorEmpresa = cuarteles.filter(c => c.empresa_id === empresa);
   const toggleFuncion = (f: string) =>
     setFunciones(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]);
 
-  // Productos filtrados por función seleccionada
-  const productosFiltrados = funciones.length > 0
-    ? productos.filter(p => p.tipo_funcion?.some(f => funciones.includes(f)))
-    : productos;
+  // Personal filtrado por cargo
+  const personalSolicitante = personal.filter(p => p.cargo === "Solicitante");
+  const personalResponsable = personal.filter(p => p.cargo === "Responsable técnico");
+  const personalDosificador = personal.filter(p => p.cargo === "Dosificador");
+  const personalAplicador   = personal.filter(p => p.cargo === "Aplicador");
+
+  // Productos: solo los que tienen stock en bodega, filtrados por función
+  const productosFiltrados = (() => {
+    let list = stockProductoIds.size > 0
+      ? productos.filter(p => stockProductoIds.has(p.id))
+      : [];
+    if (funciones.length > 0) {
+      list = list.filter(p => p.tipo_funcion?.some(f => funciones.includes(f)));
+    }
+    return list;
+  })();
 
   // ── Handlers: cuarteles ──────────────────────────────────────────────────
   const setCuartelRow = (i: number, field: keyof CuartelRow, val: string) =>
@@ -104,7 +126,7 @@ function NuevaOTContent() {
   const addCuartel    = () => setCuartelesOT(r => [...r, { cuartel_id: "", superficie_ha: "" }]);
   const removeCuartel = (i: number) => setCuartelesOT(r => r.filter((_, idx) => idx !== i));
 
-  // ── Handlers: maquinadas (auto-cálculo) ──────────────────────────────────
+  // ── Maquinadas ────────────────────────────────────────────────────────────
   const calcMaquinadas = (pulvId: string, currentCuarteles?: CuartelRow[], moj?: string): string => {
     const cuarts = currentCuarteles ?? cuartelesOT;
     const mojVal = parseFloat(moj ?? mojamientoSol) || 0;
@@ -115,29 +137,50 @@ function NuevaOTContent() {
     return String(Math.ceil(supTotal * mojVal / pulv.capacidad_lt));
   };
 
-  const recalcAllMaquinadas = (newCuarteles?: CuartelRow[], newMoj?: string) => {
-    setAplicadoresOT(rows =>
-      rows.map(r => r.pulverizador_id
-        ? { ...r, cantidad_maquinadas: calcMaquinadas(r.pulverizador_id, newCuarteles, newMoj) }
-        : r
-      )
+  const getMaquinadasDetalle = (): string => {
+    const pulvId = aplicadorOT.pulverizador_id;
+    if (!pulvId || !mojamientoSol) return "";
+    const pulv = implementos.find(p => p.id === pulvId);
+    if (!pulv?.capacidad_lt) return "";
+    const supTotal = cuartelesOT.reduce((s, c) => s + (parseFloat(c.superficie_ha) || 0), 0);
+    const mojVal = parseFloat(mojamientoSol) || 0;
+    if (!supTotal || !mojVal) return "";
+    const litrosTotales = supTotal * mojVal;
+    const maqCompletas = Math.floor(litrosTotales / pulv.capacidad_lt);
+    const litrosSaldo = Math.round(litrosTotales - maqCompletas * pulv.capacidad_lt);
+    if (litrosSaldo < 1) return `${maqCompletas} maquinadas`;
+    return `${maqCompletas} maquinadas y ${litrosSaldo} lt de saldo`;
+  };
+
+  const recalcMaquinadas = (newCuarteles?: CuartelRow[], newMoj?: string) => {
+    setAplicadorOT(prev =>
+      prev.pulverizador_id
+        ? { ...prev, cantidad_maquinadas: calcMaquinadas(prev.pulverizador_id, newCuarteles, newMoj) }
+        : prev
     );
   };
 
-  const setAplicadorRow = (i: number, field: keyof AplicadorRow, val: string) => {
-    setAplicadoresOT(rows =>
-      rows.map((r, idx) => {
-        if (idx !== i) return r;
-        const updated = { ...r, [field]: val };
-        if (field === "pulverizador_id") {
-          updated.cantidad_maquinadas = calcMaquinadas(val);
-        }
-        return updated;
-      })
-    );
+  const handleAplicadorField = (field: keyof AplicadorRow, val: string) => {
+    setAplicadorOT(prev => {
+      const updated = { ...prev, [field]: val };
+      if (field === "pulverizador_id") {
+        updated.cantidad_maquinadas = val ? calcMaquinadas(val) : "";
+      }
+      return updated;
+    });
   };
-  const addAplicador    = () => setAplicadoresOT(r => [...r, { operador_id: "", tractor_id: "", pulverizador_id: "", cantidad_maquinadas: "" }]);
-  const removeAplicador = (i: number) => setAplicadoresOT(r => r.filter((_, idx) => idx !== i));
+
+  // ── Handlers: cuartel superficie → recalc maquinadas ────────────────────
+  const handleCuartelSuperficie = (i: number, val: string) => {
+    const newCuarteles = cuartelesOT.map((r, idx) => idx === i ? { ...r, superficie_ha: val } : r);
+    setCuartelesOT(newCuarteles);
+    recalcMaquinadas(newCuarteles);
+  };
+
+  const handleMojamiento = (val: string) => {
+    setMojamientoSol(val);
+    recalcMaquinadas(undefined, val);
+  };
 
   // ── Handlers: productos ──────────────────────────────────────────────────
   const setProductoRow = (i: number, field: keyof ProductoRow, val: string) =>
@@ -155,23 +198,40 @@ function NuevaOTContent() {
     );
   };
 
-  // ── Handlers: cuartel superficie → recalc maquinadas ────────────────────
-  const handleCuartelSuperficie = (i: number, val: string) => {
-    const newCuarteles = cuartelesOT.map((r, idx) => idx === i ? { ...r, superficie_ha: val } : r);
-    setCuartelesOT(newCuarteles);
-    recalcAllMaquinadas(newCuarteles);
-  };
-
-  const handleMojamiento = (val: string) => {
-    setMojamientoSol(val);
-    recalcAllMaquinadas(undefined, val);
+  // ── Cálculo dosis por maquinada y saldo ──────────────────────────────────
+  const calcDosisDetalle = (row: ProductoRow): string[] | null => {
+    const dosis = parseFloat(row.dosis_real);
+    if (!dosis || !aplicadorOT.pulverizador_id || !mojamientoSol) return null;
+    const pulv = implementos.find(p => p.id === aplicadorOT.pulverizador_id);
+    if (!pulv?.capacidad_lt) return null;
+    const supTotal = cuartelesOT.reduce((s, c) => s + (parseFloat(c.superficie_ha) || 0), 0);
+    const mojVal = parseFloat(mojamientoSol) || 0;
+    if (!supTotal || !mojVal) return null;
+    const litrosTotales = supTotal * mojVal;
+    const litrosSaldo = litrosTotales % pulv.capacidad_lt;
+    const unit = row.dosis_unidad.split("/")[0];
+    let dosisMaq: number;
+    let dosisSaldo: number;
+    if (row.dosis_unidad.includes("/100")) {
+      dosisMaq   = dosis * (pulv.capacidad_lt / 100);
+      dosisSaldo = dosis * (litrosSaldo / 100);
+    } else if (row.dosis_unidad.includes("/ha")) {
+      dosisMaq   = dosis * (pulv.capacidad_lt / mojVal);
+      dosisSaldo = dosis * (litrosSaldo / mojVal);
+    } else {
+      return null;
+    }
+    const fmt = (n: number) => n < 10 ? n.toFixed(2) : n.toFixed(1);
+    const lines = [`${fmt(dosisMaq)} ${unit}/maquinada`];
+    if (litrosSaldo > 1) lines.push(`Saldo: ${fmt(dosisSaldo)} ${unit} (${Math.round(litrosSaldo)} lt)`);
+    return lines;
   };
 
   // ── Guardar ──────────────────────────────────────────────────────────────
   const handleSave = async (estado: "borrador" | "emitida") => {
     setError("");
-    if (!empresa) { setError("Seleccioná una empresa."); return; }
-    if (cuartelesOT.some(c => !c.cuartel_id)) { setError("Completá todos los cuarteles o eliminá las filas vacías."); return; }
+    if (!empresa) { setError("Selecciona una empresa."); return; }
+    if (cuartelesOT.some(c => !c.cuartel_id)) { setError("Completa todos los cuarteles o elimina las filas vacías."); return; }
     if (productosOT.some(p => !p.producto_id || !p.dosis_real)) { setError("Cada producto necesita nombre y dosis."); return; }
 
     setSaving(true);
@@ -204,40 +264,40 @@ function NuevaOTContent() {
 
     const superficieTotal = cuartelesOT.reduce((s, c) => s + (parseFloat(c.superficie_ha) || 0), 0);
 
+    const productosRows = productosOT.filter(p => p.producto_id && p.dosis_real).map(p => {
+      const dosis = parseFloat(p.dosis_real);
+      const carencia = parseInt(p.carencia_dias) || 0;
+      return {
+        ot_id: otId,
+        producto_id: p.producto_id,
+        dosis_real: dosis,
+        dosis_unidad: p.dosis_unidad,
+        carencia_dias: carencia,
+        rei_horas: parseInt(p.rei_horas) || 0,
+        fecha_viable: fechaAplicacion
+          ? new Date(new Date(fechaAplicacion).getTime() + carencia * 86400000).toISOString().slice(0, 10)
+          : null,
+        consumo_total: p.consumo_total ? parseFloat(p.consumo_total)
+          : p.dosis_unidad.endsWith("/ha") ? dosis * superficieTotal : null,
+      };
+    });
+
+    const aplicadorRow = aplicadorOT.personal_id ? {
+      ot_id: otId,
+      personal_id: aplicadorOT.personal_id,
+      tractor_id: aplicadorOT.tractor_id || null,
+      pulverizador_id: aplicadorOT.pulverizador_id || null,
+      cantidad_maquinadas: aplicadorOT.cantidad_maquinadas ? parseFloat(aplicadorOT.cantidad_maquinadas) : null,
+    } : null;
+
     await Promise.all([
       supabase.from("ot_cuarteles").insert(
         cuartelesOT.filter(c => c.cuartel_id).map(c => ({
           ot_id: otId, cuartel_id: c.cuartel_id, superficie_ha: parseFloat(c.superficie_ha) || 0,
         }))
       ),
-      supabase.from("ot_aplicadores").insert(
-        aplicadoresOT.filter(a => a.operador_id).map(a => ({
-          ot_id: otId,
-          operador_id: a.operador_id,
-          tractor_id: a.tractor_id || null,
-          pulverizador_id: a.pulverizador_id || null,
-          cantidad_maquinadas: a.cantidad_maquinadas ? parseFloat(a.cantidad_maquinadas) : null,
-        }))
-      ),
-      supabase.from("ot_productos").insert(
-        productosOT.filter(p => p.producto_id && p.dosis_real).map(p => {
-          const dosis = parseFloat(p.dosis_real);
-          const carencia = parseInt(p.carencia_dias) || 0;
-          return {
-            ot_id: otId,
-            producto_id: p.producto_id,
-            dosis_real: dosis,
-            dosis_unidad: p.dosis_unidad,
-            carencia_dias: carencia,
-            rei_horas: parseInt(p.rei_horas) || 0,
-            fecha_viable: fechaAplicacion
-              ? new Date(new Date(fechaAplicacion).getTime() + carencia * 86400000).toISOString().slice(0, 10)
-              : null,
-            consumo_total: p.consumo_total ? parseFloat(p.consumo_total)
-              : p.dosis_unidad.endsWith("/ha") ? dosis * superficieTotal : null,
-          };
-        })
-      ),
+      supabase.from("ot_productos").insert(productosRows),
+      ...(aplicadorRow ? [supabase.from("ot_aplicadores").insert(aplicadorRow)] : []),
     ]);
 
     setSaving(false);
@@ -245,6 +305,8 @@ function NuevaOTContent() {
   };
 
   if (loading) return <><Nav empresaId={empresaId} /><main style={container}><p style={{ color: "#6b7280" }}>Cargando...</p></main></>;
+
+  const maquinadasDetalle = getMaquinadasDetalle();
 
   return (
     <>
@@ -284,26 +346,35 @@ function NuevaOTContent() {
           <section style={section}>
             <h2 style={sectionTitle}>Responsables</h2>
             {personal.length === 0 && (
-              <p style={infoMsg}>No hay personal cargado. Ingresá primero a <strong>Ajustes → Personal</strong>.</p>
+              <p style={infoMsg}>No hay personal cargado. Ingresa primero a <strong>Ajustes → Personal</strong>.</p>
             )}
             <div style={grid3}>
               <Field label="Solicitante">
                 <select value={solicitanteId} onChange={e => setSolicitanteId(e.target.value)} style={inputStyle}>
                   <option value="">— Seleccionar —</option>
-                  {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}{p.cargo ? ` — ${p.cargo}` : ""}</option>)}
+                  {personalSolicitante.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                 </select>
+                {personalSolicitante.length === 0 && personal.length > 0 && (
+                  <span style={hintStyle}>Sin personal con cargo "Solicitante" en Ajustes</span>
+                )}
               </Field>
               <Field label="Responsable técnico">
                 <select value={responsableId} onChange={e => setResponsableId(e.target.value)} style={inputStyle}>
                   <option value="">— Seleccionar —</option>
-                  {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}{p.cargo ? ` — ${p.cargo}` : ""}</option>)}
+                  {personalResponsable.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                 </select>
+                {personalResponsable.length === 0 && personal.length > 0 && (
+                  <span style={hintStyle}>Sin personal con cargo "Responsable técnico"</span>
+                )}
               </Field>
               <Field label="Dosificador">
                 <select value={dosificadorId} onChange={e => setDosificadorId(e.target.value)} style={inputStyle}>
                   <option value="">— Seleccionar —</option>
-                  {personal.map(p => <option key={p.id} value={p.id}>{p.nombre}{p.cargo ? ` — ${p.cargo}` : ""}</option>)}
+                  {personalDosificador.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                 </select>
+                {personalDosificador.length === 0 && personal.length > 0 && (
+                  <span style={hintStyle}>Sin personal con cargo "Dosificador"</span>
+                )}
               </Field>
             </div>
           </section>
@@ -321,9 +392,9 @@ function NuevaOTContent() {
                   </button>
                 ))}
               </div>
-              {funciones.length > 0 && productosFiltrados.length < productos.length && (
+              {funciones.length > 0 && (
                 <p style={{ fontSize: "12px", color: "#1a4731", marginTop: "6px" }}>
-                  Filtrando {productosFiltrados.length} producto{productosFiltrados.length !== 1 ? "s" : ""} para la función seleccionada
+                  {productosFiltrados.length} producto{productosFiltrados.length !== 1 ? "s" : ""} disponibles en bodega para la función seleccionada
                 </p>
               )}
             </div>
@@ -377,9 +448,7 @@ function NuevaOTContent() {
                       onFocus={() => {
                         if (!row.superficie_ha && row.cuartel_id) {
                           const c = cuarteles.find(c => c.id === row.cuartel_id);
-                          if (c?.superficie_real) {
-                            handleCuartelSuperficie(i, String(c.superficie_real));
-                          }
+                          if (c?.superficie_real) handleCuartelSuperficie(i, String(c.superficie_real));
                         }
                       }}
                       style={inputStyle}
@@ -395,65 +464,66 @@ function NuevaOTContent() {
             <button onClick={addCuartel} style={addBtn} type="button">+ Agregar cuartel</button>
           </section>
 
-          {/* ── Aplicadores ── */}
+          {/* ── Aplicador ── */}
           <section style={section}>
-            <h2 style={sectionTitle}>Aplicadores y maquinaria</h2>
-            {aplicadoresOT.map((row, i) => (
-              <div key={i} style={{ ...rowWrap, flexWrap: "wrap" }}>
-                <div style={{ flex: "2 1 160px" }}>
-                  <Field label={i === 0 ? "Operador" : ""}>
-                    <select value={row.operador_id} onChange={e => setAplicadorRow(i, "operador_id", e.target.value)} style={inputStyle}>
-                      <option value="">— Seleccionar —</option>
-                      {operadores.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-                    </select>
-                  </Field>
-                </div>
-                <div style={{ flex: "2 1 140px" }}>
-                  <Field label={i === 0 ? "Tractor" : ""}>
-                    <select value={row.tractor_id} onChange={e => setAplicadorRow(i, "tractor_id", e.target.value)} style={inputStyle}>
-                      <option value="">— Sin asignar —</option>
-                      {tractores.map(t => <option key={t.id} value={t.id}>{t.codigo}{t.descripcion ? ` — ${t.descripcion}` : ""}</option>)}
-                    </select>
-                  </Field>
-                </div>
-                <div style={{ flex: "2 1 140px" }}>
-                  <Field label={i === 0 ? "Implemento" : ""}>
-                    <select value={row.pulverizador_id} onChange={e => setAplicadorRow(i, "pulverizador_id", e.target.value)} style={inputStyle}>
-                      <option value="">— Sin asignar —</option>
-                      {implementos.map(p => <option key={p.id} value={p.id}>{p.codigo}{p.capacidad_lt ? ` (${p.capacidad_lt}lt)` : ""}</option>)}
-                    </select>
-                  </Field>
-                </div>
-                <div style={{ flex: "1 1 100px" }}>
-                  <Field label={i === 0 ? "N° Maquinadas" : ""}>
-                    <input
-                      type="number" min="0" step="1"
-                      value={row.cantidad_maquinadas}
-                      onChange={e => setAplicadorRow(i, "cantidad_maquinadas", e.target.value)}
-                      style={inputStyle}
-                      placeholder="Auto"
-                    />
-                  </Field>
-                </div>
-                {aplicadoresOT.length > 1 && (
-                  <button onClick={() => removeAplicador(i)} style={removeBtn} type="button">✕</button>
-                )}
+            <h2 style={sectionTitle}>Aplicador y maquinaria</h2>
+            {personalAplicador.length === 0 && personal.length > 0 && (
+              <p style={infoMsg}>Sin aplicadores en Ajustes. Agrega personal con cargo <strong>Aplicador</strong>.</p>
+            )}
+            <div style={{ ...rowWrap, flexWrap: "wrap" }}>
+              <div style={{ flex: "2 1 160px" }}>
+                <Field label="Aplicador">
+                  <select value={aplicadorOT.personal_id} onChange={e => handleAplicadorField("personal_id", e.target.value)} style={inputStyle}>
+                    <option value="">— Seleccionar —</option>
+                    {personalAplicador.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                  </select>
+                </Field>
               </div>
-            ))}
-            <p style={{ fontSize: "11px", color: "#9ca3af", marginBottom: "8px" }}>
-              Maquinadas = ⌈ha × lt/ha ÷ capacidad implemento⌉ — se calcula automáticamente al seleccionar implemento y mojamiento.
-            </p>
-            <button onClick={addAplicador} style={addBtn} type="button">+ Agregar aplicador</button>
+              <div style={{ flex: "2 1 140px" }}>
+                <Field label="Tractor">
+                  <select value={aplicadorOT.tractor_id} onChange={e => handleAplicadorField("tractor_id", e.target.value)} style={inputStyle}>
+                    <option value="">— Sin asignar —</option>
+                    {tractores.map(t => <option key={t.id} value={t.id}>{t.codigo}{t.descripcion ? ` — ${t.descripcion}` : ""}</option>)}
+                  </select>
+                </Field>
+              </div>
+              <div style={{ flex: "2 1 140px" }}>
+                <Field label="Implemento">
+                  <select value={aplicadorOT.pulverizador_id} onChange={e => handleAplicadorField("pulverizador_id", e.target.value)} style={inputStyle}>
+                    <option value="">— Sin asignar —</option>
+                    {implementos.map(p => <option key={p.id} value={p.id}>{p.codigo}{p.capacidad_lt ? ` (${p.capacidad_lt}lt)` : ""}</option>)}
+                  </select>
+                </Field>
+              </div>
+              <div style={{ flex: "1 1 130px" }}>
+                <Field label="N° Maquinadas">
+                  <input
+                    type="number" min="0" step="1"
+                    value={aplicadorOT.cantidad_maquinadas}
+                    onChange={e => setAplicadorOT(prev => ({ ...prev, cantidad_maquinadas: e.target.value }))}
+                    style={inputStyle}
+                    placeholder="Auto"
+                  />
+                  {maquinadasDetalle && (
+                    <span style={{ fontSize: "11px", color: "#1a4731", marginTop: "3px" }}>{maquinadasDetalle}</span>
+                  )}
+                </Field>
+              </div>
+            </div>
           </section>
 
           {/* ── Productos ── */}
           <section style={section}>
             <h2 style={sectionTitle}>Productos a aplicar</h2>
-            {productosFiltrados.length === 0 && funciones.length > 0 && (
-              <p style={infoMsg}>No hay productos con la función seleccionada en el catálogo.</p>
+            {empresa && stockProductoIds.size === 0 && (
+              <p style={infoMsg}>Sin stock en bodega para esta empresa. Registra ingresos en <strong>Bodega → Ingreso</strong>.</p>
+            )}
+            {productosFiltrados.length === 0 && funciones.length > 0 && stockProductoIds.size > 0 && (
+              <p style={infoMsg}>No hay productos con la función seleccionada disponibles en bodega.</p>
             )}
             {productosOT.map((row, i) => {
               const prod = productos.find(p => p.id === row.producto_id);
+              const dosisLines = calcDosisDetalle(row);
               return (
                 <div key={i} style={{ ...rowWrap, flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
                   <div style={{ flex: "3 1 200px" }}>
@@ -492,9 +562,14 @@ function NuevaOTContent() {
                       <input type="number" min="0" value={row.rei_horas} onChange={e => setProductoRow(i, "rei_horas", e.target.value)} style={inputStyle} />
                     </Field>
                   </div>
-                  {prod?.especies_autorizadas && (
-                    <div style={{ flex: "0 0 100%", paddingLeft: "2px" }}>
-                      <span style={{ fontSize: "11px", color: "#6b7280" }}>Autorizado: {prod.especies_autorizadas.join(", ")}</span>
+                  {(prod?.especies_autorizadas || dosisLines) && (
+                    <div style={{ flex: "0 0 100%", paddingLeft: "2px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
+                      {prod?.especies_autorizadas && (
+                        <span style={{ fontSize: "11px", color: "#6b7280" }}>Autorizado: {prod.especies_autorizadas.join(", ")}</span>
+                      )}
+                      {dosisLines && dosisLines.map((line, li) => (
+                        <span key={li} style={{ fontSize: "11px", color: "#1a4731", fontWeight: 600 }}>{line}</span>
+                      ))}
                     </div>
                   )}
                   {productosOT.length > 1 && (
@@ -684,6 +759,7 @@ const sectionTitle: React.CSSProperties = { fontSize: "13px", fontWeight: 700, c
 const grid2: React.CSSProperties        = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" };
 const grid3: React.CSSProperties        = { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px" };
 const labelStyle: React.CSSProperties   = { fontSize: "12px", fontWeight: 700, color: "#374151" };
+const hintStyle: React.CSSProperties    = { fontSize: "11px", color: "#92400e", marginTop: "2px" };
 const inputStyle: React.CSSProperties   = { padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "14px", background: "#fafafa", color: "#111", width: "100%", boxSizing: "border-box" };
 const chipRow: React.CSSProperties      = { display: "flex", flexWrap: "wrap", gap: "6px" };
 const chip: React.CSSProperties         = { padding: "4px 10px", borderRadius: "999px", border: "1.5px solid #d1d5db", background: "#fff", fontSize: "11px", fontWeight: 600, cursor: "pointer", color: "#374151" };
