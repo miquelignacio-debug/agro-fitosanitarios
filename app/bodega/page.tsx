@@ -14,13 +14,12 @@ type StockRow = {
 };
 
 function displayStock(cantidad: number, unidadDosis: string | null): string {
-  const raw = (unidadDosis || "u").split("/")[0].trim().toLowerCase();
+  const raw = (unidadDosis || "").split("/")[0].trim().toLowerCase();
   const fmt = (n: number) => n.toLocaleString("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 3 });
   if (raw === "cc" || raw === "ml") return `${fmt(cantidad / 1000)} Lt`;
   if (raw === "g")                  return `${fmt(cantidad / 1000)} Kg`;
-  if (raw === "lt" || raw === "l")  return `${fmt(cantidad)} Lt`;
   if (raw === "kg")                 return `${fmt(cantidad)} Kg`;
-  return `${fmt(cantidad)} ${raw || "u"}`;
+  return `${fmt(cantidad)} Lt`; // lt, l, vacío, o cualquier otro → Lt
 }
 
 type TransfForm = {
