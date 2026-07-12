@@ -73,16 +73,31 @@ function BodegaContent() {
         .from("stock_actual")
         .select("*, producto:productos(*)")
         .eq("empresa_id", eid)
-        .order("producto(nombre_comercial)", { ascending: true }),
+        .order("producto_id", { ascending: true }),
       supabase
         .from("stock_movimientos")
-        .select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*), ot:ordenes_trabajo(id,numero)")
+        .select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*)")
         .eq("empresa_id", eid)
         .order("fecha", { ascending: false })
-        .limit(50),
+        .limit(200),
     ]);
+
+    // Cargar números de OT por separado (ot_id no tiene FK explícito, el join inline falla)
+    const rawMv = (mv as StockMovimiento[]) || [];
+    const otIds = [...new Set(rawMv.filter(m => m.ot_id).map(m => m.ot_id!))];
+    let otMap: Record<string, number> = {};
+    if (otIds.length) {
+      const { data: ots } = await supabase
+        .from("ordenes_trabajo").select("id, numero").in("id", otIds);
+      if (ots) otMap = Object.fromEntries(ots.map((o: { id: string; numero: number }) => [o.id, o.numero]));
+    }
+    const mvsConOt = rawMv.map(m => ({
+      ...m,
+      ot: m.ot_id ? { id: m.ot_id, numero: otMap[m.ot_id] } : undefined,
+    }));
+
     setStock((st as StockRow[]) || []);
-    setMovimientos((mv as StockMovimiento[]) || []);
+    setMovimientos(mvsConOt as StockMovimiento[]);
     setLoading(false);
   };
 
