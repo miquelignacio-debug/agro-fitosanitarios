@@ -158,9 +158,15 @@ function OTDetalleContent() {
   const handleFinalizar = async () => {
     if (!ot) return;
     setTransError("");
+
+    const mojReal = parseFloat(mojamientoReal) || 0;
+    if (!mojReal) {
+      setTransError("Ingresa el mojamiento real (lt/ha) para calcular el consumo por volumen aplicado.");
+      return;
+    }
+
     setTransitioning(true);
 
-    const mojReal     = parseFloat(mojamientoReal) || 0;
     const mojSol      = ot.mojamiento_solicitado_ltha ?? 0;
     const remanenteLt = parseFloat(remanente) || 0;
     const supTotal    = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
@@ -285,10 +291,10 @@ function OTDetalleContent() {
 
     if (reopenError) { setTransError(`Error al reabrir: ${reopenError.message}`); setTransitioning(false); return; }
 
-    // Limpiar consumo_total de productos
+    // Limpiar consumo_total y dosis_por_maquinada de productos
     await Promise.all(
       ot.ot_productos.map(p =>
-        supabase.from("ot_productos").update({ consumo_total: null }).eq("id", p.id)
+        supabase.from("ot_productos").update({ consumo_total: null, dosis_por_maquinada: null }).eq("id", p.id)
       )
     );
 
@@ -303,13 +309,13 @@ function OTDetalleContent() {
     setTransError("");
     setTransitioning(true);
 
-    // Revertir stock si estaba finalizada
+    // Revertir stock si estaba finalizada (salida campo + salida barbecho)
     if (ot.estado === "finalizada") {
       const { data: movs } = await supabase
         .from("stock_movimientos")
-        .select("*")
+        .select("id")
         .eq("ot_id", ot.id)
-        .eq("tipo", "salida");
+        .in("tipo", ["salida", "salida_barbecho"]);
 
       if (movs && movs.length > 0) {
         const ids = movs.map((m: { id: string }) => m.id);

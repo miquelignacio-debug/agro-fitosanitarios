@@ -103,6 +103,7 @@ export type StockMovimiento = {
   producto?: Producto;
   empresa?: Empresa;
   empresa_contraparte?: Empresa;
+  ot?: { id: string; numero: number };
 };
 
 export type StockActual = {

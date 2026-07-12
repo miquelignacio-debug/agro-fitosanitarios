@@ -76,7 +76,7 @@ function BodegaContent() {
         .order("producto(nombre_comercial)", { ascending: true }),
       supabase
         .from("stock_movimientos")
-        .select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*)")
+        .select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*), ot:ordenes_trabajo(id,numero)")
         .eq("empresa_id", eid)
         .order("fecha", { ascending: false })
         .limit(50),
@@ -417,7 +417,7 @@ function BodegaContent() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Fecha", "Tipo", "Producto", "Cantidad", "Valor unit.", "Valor total", "Documento", "Proveedor / OT / Contraparte", "Notas"].map((h) => (
+                  {["Fecha", "Tipo", "Producto", "Cantidad", "Valor unit.", "Valor total", "Documento", "Origen / OT / Destino", "Notas"].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -453,7 +453,18 @@ function BodegaContent() {
                       ) : "—"}
                     </td>
                     <td style={td}>
-                      {m.proveedor || m.empresa_contraparte?.nombre || (m.ot_id ? `OT ref.` : "—")}
+                      {m.proveedor
+                        ? m.proveedor
+                        : m.empresa_contraparte?.nombre
+                          ? m.empresa_contraparte.nombre
+                          : m.ot_id
+                            ? <Link
+                                href={`/ordenes/${m.ot_id}?empresa=${empresaId}`}
+                                style={{ color: "#1a4731", fontWeight: 700, textDecoration: "none" }}
+                              >
+                                OT #{m.ot?.numero ?? "?"}
+                              </Link>
+                            : "—"}
                     </td>
                     <td style={{ ...td, color: "#6b7280" }}>{m.notas || "—"}</td>
                   </tr>
