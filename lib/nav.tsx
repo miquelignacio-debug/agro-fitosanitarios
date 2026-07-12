@@ -10,7 +10,6 @@ const NAV_LINKS = [
   { href: "/dashboard",  label: "Inicio" },
   { href: "/ordenes",    label: "Órdenes" },
   { href: "/cuaderno",    label: "Cuaderno" },
-  { href: "/monitoreos", label: "Monitoreos" },
   { href: "/bodega",     label: "Bodega" },
   { href: "/cuarteles",  label: "Cuarteles" },
   { href: "/productos",  label: "Productos" },

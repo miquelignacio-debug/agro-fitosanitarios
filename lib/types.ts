@@ -200,63 +200,6 @@ export type OtProductoConDetalle = OtProducto & {
   producto: Producto;
 };
 
-// ── Monitoreo ─────────────────────────────────────────────────
-
-export type MonitoreoEstado = "borrador" | "enviado" | "revisado";
-
-export type MonitoreoLinea = {
-  id: string;
-  monitoreo_id: string;
-  problema: string;
-  tipo: "plaga" | "enfermedad";
-  metodologia: string;
-  presencia: boolean;
-  incidencia: number;
-  observaciones: string | null;
-  foto_url: string | null;
-  created_at: string;
-};
-
-export type MonitoreoSesion = {
-  id: string;
-  numero: number;
-  empresa_id: string;
-  cuartel_id: string;
-  monitor_id: string | null;
-  fecha: string;
-  hora_inicio: string | null;
-  hora_fin: string | null;
-  especie: string;
-  estado_fenologico: string;
-  temperatura_c: number | null;
-  humedad_pct: number | null;
-  observaciones_generales: string | null;
-  foto_general_url: string | null;
-  estado: MonitoreoEstado;
-  revisor_id: string | null;
-  fecha_revision: string | null;
-  notas_revision: string | null;
-  created_at: string;
-  updated_at: string;
-  // joins
-  cuartel?: Cuartel;
-  monitor?: Personal;
-  revisor?: Personal;
-  lineas?: MonitoreoLinea[];
-};
-
-export const ESTADOS_MONITOREO: Record<MonitoreoEstado, string> = {
-  borrador: "Borrador",
-  enviado: "Enviado — pendiente revisión",
-  revisado: "Revisado",
-};
-
-export const ESTADOS_MONITOREO_COLOR: Record<MonitoreoEstado, string> = {
-  borrador: "#6b7280",
-  enviado: "#d97706",
-  revisado: "#15803d",
-};
-
 // ── Tipos auxiliares ──────────────────────────────────────────
 
 export const FUNCIONES_FITOSANITARIAS = [
