@@ -85,7 +85,7 @@ export type StockMovimiento = {
   id: string;
   empresa_id: string;
   producto_id: string;
-  tipo: "entrada" | "salida" | "transferencia_salida" | "transferencia_entrada" | "ajuste_entrada" | "ajuste_salida";
+  tipo: "entrada" | "salida" | "salida_barbecho" | "transferencia_salida" | "transferencia_entrada" | "ajuste_entrada" | "ajuste_salida";
   cantidad: number;
   unidad: string;
   fecha: string;
@@ -130,6 +130,7 @@ export type OrdenTrabajo = {
   objetivo_secundario: string | null;
   mojamiento_solicitado_ltha: number | null;
   mojamiento_real_ltha: number | null;
+  remanente_lt: number | null;
   enjuage_pulverizador_lt: number | null;
   viento_kmh: number | null;
   temperatura_c: number | null;

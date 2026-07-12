@@ -166,6 +166,7 @@ function BodegaContent() {
   const tipoLabel: Record<string, string> = {
     entrada: "Entrada",
     salida: "Salida (OT)",
+    salida_barbecho: "Barbecho (OT)",
     transferencia_salida: "Transf. salida",
     transferencia_entrada: "Transf. entrada",
     ajuste_entrada: "Ajuste +",
@@ -175,6 +176,7 @@ function BodegaContent() {
   const tipoColor: Record<string, string> = {
     entrada: "#15803d",
     salida: "#dc2626",
+    salida_barbecho: "#92400e",
     transferencia_salida: "#d97706",
     transferencia_entrada: "#1d4ed8",
     ajuste_entrada: "#0891b2",

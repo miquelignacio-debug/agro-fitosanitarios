@@ -56,27 +56,13 @@ const TRANS_LABEL: Record<string, string> = {
   emitida: "Emitir / Aprobar", en_ejecucion: "Iniciar ejecución", finalizada: "Finalizar", anulada: "Anular",
 };
 
-// Calcula consumo total siempre desde volumen de agua real.
-// mojSol  = calibración planificada (L/ha) — factor de conversión /ha → /100lt
-// mojReal = calibración real aplicada (L/ha) — para estimar agua cuando no hay datos de tanque
-// aguaRealLt = maquinadas × capacidad_lt (0 si no hay datos de tanque)
-function calcConsumo(
-  dosis: number, unidad: string,
-  mojSol: number, supTotal: number,
-  aguaRealLt: number, mojReal: number,
-): number {
+// Consumo de producto para un volumen de agua dado.
+// mojSol = calibración planificada (L/ha) — convierte dosis /ha a base-volumen.
+function calcConsumoFromWater(dosis: number, unidad: string, mojSol: number, aguaLt: number): number {
+  if (aguaLt <= 0) return 0;
   const r = (n: number) => Math.round(n * 1000) / 1000;
-  // Agua real: prefiere maquinadas × capacidad; estima desde mojamiento × área si no hay datos
-  const agua = aguaRealLt > 0 ? aguaRealLt : (mojReal > 0 ? mojReal * supTotal : 0);
-  if (unidad.includes("/100")) {
-    return agua > 0 ? r((dosis / 100) * agua) : 0;
-  }
-  if (unidad.includes("/ha")) {
-    // Convierte /ha → /100lt usando calibración planificada, aplica al agua real
-    const calibracion = mojSol > 0 ? mojSol : mojReal;
-    if (calibracion > 0 && agua > 0) return r(dosis * agua / calibracion);
-    return r(dosis * supTotal); // último recurso: sin datos de agua
-  }
+  if (unidad.includes("/100")) return r(dosis * aguaLt / 100);
+  if (unidad.includes("/ha") && mojSol > 0) return r(dosis * aguaLt / mojSol);
   return 0;
 }
 
@@ -110,6 +96,7 @@ function OTDetalleContent() {
   const [viento,         setViento]         = useState("");
   const [temperatura,    setTemperatura]    = useState("");
   const [mojamientoReal, setMojamientoReal] = useState("");
+  const [remanente,      setRemanente]      = useState("");
   const [enjuage,        setEnjuage]        = useState("");
   const [showEjecucion,  setShowEjecucion]  = useState(false);
 
@@ -146,6 +133,7 @@ function OTDetalleContent() {
     setViento(String(data.viento_kmh || ""));
     setTemperatura(String(data.temperatura_c || ""));
     setMojamientoReal(String(data.mojamiento_real_ltha || ""));
+    setRemanente(String(data.remanente_lt || ""));
     setEnjuage(String(data.enjuage_pulverizador_lt || ""));
     setLoading(false);
   };
@@ -172,30 +160,32 @@ function OTDetalleContent() {
     setTransError("");
     setTransitioning(true);
 
-    const mojReal = parseFloat(mojamientoReal) || 0;
-    const mojSol  = ot.mojamiento_solicitado_ltha ?? 0;
-    const supTotal = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
+    const mojReal     = parseFloat(mojamientoReal) || 0;
+    const mojSol      = ot.mojamiento_solicitado_ltha ?? 0;
+    const remanenteLt = parseFloat(remanente) || 0;
+    const supTotal    = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
 
-    // Volumen real total = suma de (maquinadas × capacidad_lt) por cada aplicador
-    const aguaRealLt = ot.ot_aplicadores.reduce((sum, ap) =>
-      sum + (ap.cantidad_maquinadas ?? 0) * (ap.pulverizador?.capacidad_lt ?? 0), 0);
+    // Agua aplicada al campo (mojamiento_real × ha) y remanente al barbecho
+    const aguaCampoLt    = mojReal * supTotal;
+    const aguaBarbechoLt = remanenteLt;
 
     // Capacidad del primer pulverizador con datos (para dosis_por_maquinada)
     const capacidadLt = ot.ot_aplicadores.find(ap => ap.pulverizador?.capacidad_lt)?.pulverizador?.capacidad_lt ?? 0;
 
-    // Calcular consumo y dosis por maquinada para cada producto
-    const consumos = ot.ot_productos.map(p => ({
-      p,
-      consumo: calcConsumo(p.dosis_real, p.dosis_unidad, mojSol, supTotal, aguaRealLt, mojReal),
-      dosisMaq: calcDosisMaq(p.dosis_real, p.dosis_unidad, mojSol, capacidadLt),
-      unidadStock: p.producto.unidad_dosis || p.dosis_unidad.split("/")[0] || "lt",
-    }));
+    // Calcular consumos por producto
+    const consumos = ot.ot_productos.map(p => {
+      const consumoCampo    = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaCampoLt);
+      const consumoBarbecho = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaBarbechoLt);
+      const dosisMaq        = calcDosisMaq(p.dosis_real, p.dosis_unidad, mojSol, capacidadLt);
+      const unidadStock     = p.producto.unidad_dosis || p.dosis_unidad.split("/")[0] || "lt";
+      return { p, consumoCampo, consumoBarbecho, dosisMaq, unidadStock };
+    });
 
-    // Actualizar consumo_total y dosis_por_maquinada en ot_productos
+    // Guardar consumo campo (sin barbecho) en ot_productos — es lo que va al cuaderno de campo
     const updateResults = await Promise.all(
-      consumos.map(({ p, consumo, dosisMaq }) =>
+      consumos.map(({ p, consumoCampo, dosisMaq }) =>
         supabase.from("ot_productos").update({
-          consumo_total: consumo,
+          consumo_total:       consumoCampo,
           dosis_por_maquinada: dosisMaq,
         }).eq("id", p.id)
       )
@@ -215,6 +205,7 @@ function OTDetalleContent() {
       viento_kmh:              viento      ? parseFloat(viento)      : null,
       temperatura_c:           temperatura ? parseFloat(temperatura) : null,
       mojamiento_real_ltha:    mojReal     || null,
+      remanente_lt:            remanenteLt || null,
       enjuage_pulverizador_lt: enjuage     ? parseFloat(enjuage)     : null,
       notas:        notas || null,
       updated_at:   new Date().toISOString(),
@@ -222,18 +213,24 @@ function OTDetalleContent() {
 
     if (otError) { setTransError(`Error al finalizar: ${otError.message}`); setTransitioning(false); return; }
 
-    // Insertar movimientos de stock
-    const stockInserts = consumos
-      .filter(({ consumo }) => consumo > 0)
-      .map(({ p, consumo, unidadStock }) => ({
-        empresa_id:  ot.empresa_id,
-        producto_id: p.producto_id,
-        tipo:        "salida" as const,
-        cantidad:    consumo,
-        unidad:      unidadStock,
-        fecha:       ot.fecha_aplicacion || new Date().toISOString().slice(0, 10),
-        ot_id:       ot.id,
-      }));
+    // Insertar movimientos de stock: salida campo + salida barbecho (separados)
+    const fecha = ot.fecha_aplicacion || new Date().toISOString().slice(0, 10);
+    const stockInserts: object[] = [];
+    consumos.forEach(({ p, consumoCampo, consumoBarbecho, unidadStock }) => {
+      if (consumoCampo > 0) {
+        stockInserts.push({
+          empresa_id: ot.empresa_id, producto_id: p.producto_id,
+          tipo: "salida", cantidad: consumoCampo, unidad: unidadStock, fecha, ot_id: ot.id,
+        });
+      }
+      if (consumoBarbecho > 0) {
+        stockInserts.push({
+          empresa_id: ot.empresa_id, producto_id: p.producto_id,
+          tipo: "salida_barbecho", cantidad: consumoBarbecho, unidad: unidadStock, fecha, ot_id: ot.id,
+          notas: `Remanente barbecho (${remanenteLt} lt agua)`,
+        });
+      }
+    });
 
     if (stockInserts.length) {
       const { error: stockError } = await supabase.from("stock_movimientos").insert(stockInserts);
@@ -257,12 +254,12 @@ function OTDetalleContent() {
     setTransError("");
     setTransitioning(true);
 
-    // Buscar movimientos de salida de esta OT
+    // Buscar movimientos de salida y barbecho de esta OT
     const { data: movs, error: movsError } = await supabase
       .from("stock_movimientos")
-      .select("*")
+      .select("id")
       .eq("ot_id", ot.id)
-      .eq("tipo", "salida");
+      .in("tipo", ["salida", "salida_barbecho"]);
 
     if (movsError) { setTransError(`Error al buscar movimientos: ${movsError.message}`); setTransitioning(false); return; }
 
@@ -277,6 +274,7 @@ function OTDetalleContent() {
     const { error: reopenError } = await supabase.from("ordenes_trabajo").update({
       estado:                  "en_ejecucion",
       mojamiento_real_ltha:    null,
+      remanente_lt:            null,
       hora_inicio:             null,
       hora_fin:                null,
       viento_kmh:              null,
@@ -584,14 +582,18 @@ function OTDetalleContent() {
               })}
             </div>
 
-            {estaFinalizada && (ot.hora_inicio || ot.viento_kmh != null || ot.temperatura_c != null) && (
+            {estaFinalizada && (ot.hora_inicio || ot.viento_kmh != null || ot.temperatura_c != null || ot.mojamiento_real_ltha != null) && (
               <div style={card}>
                 <h3 style={cardTitle}>Datos de ejecución</h3>
                 {ot.hora_inicio     && <Row label="Inicio"       value={ot.hora_inicio} />}
                 {ot.hora_fin        && <Row label="Fin"          value={ot.hora_fin} />}
                 {ot.viento_kmh      != null && <Row label="Viento"      value={`${ot.viento_kmh} km/h`} />}
                 {ot.temperatura_c   != null && <Row label="Temperatura" value={`${ot.temperatura_c} °C`} />}
-                {ot.enjuage_pulverizador_lt != null && <Row label="Enjuague" value={`${ot.enjuage_pulverizador_lt} lt`} />}
+                {ot.mojamiento_real_ltha != null && (
+                  <Row label="Mojamiento real" value={`${ot.mojamiento_real_ltha} lt/ha (${(ot.mojamiento_real_ltha * superficieTotal).toLocaleString("es-CL")} lt campo)`} />
+                )}
+                {ot.remanente_lt    != null && <Row label="Remanente barbecho" value={`${ot.remanente_lt} lt`} />}
+                {ot.enjuage_pulverizador_lt != null && <Row label="Enjuague"   value={`${ot.enjuage_pulverizador_lt} lt`} />}
               </div>
             )}
 
@@ -626,7 +628,10 @@ function OTDetalleContent() {
                   <input type="number" step="0.1" value={temperatura} onChange={e => setTemperatura(e.target.value)} style={inputStyle} placeholder="0.0" />
                 </ModalField>
                 <ModalField label="Mojamiento real (lt/ha) *">
-                  <input type="number" min="0" step="1" value={mojamientoReal} onChange={e => setMojamientoReal(e.target.value)} style={inputStyle} placeholder="Ej. 500" />
+                  <input type="number" min="0" step="1" value={mojamientoReal} onChange={e => setMojamientoReal(e.target.value)} style={inputStyle} placeholder="Ej. 1000" />
+                </ModalField>
+                <ModalField label="Remanente al barbecho (lt)">
+                  <input type="number" min="0" step="1" value={remanente} onChange={e => setRemanente(e.target.value)} style={inputStyle} placeholder="0" />
                 </ModalField>
                 <ModalField label="Enjuague implemento (lt)">
                   <input type="number" min="0" step="1" value={enjuage} onChange={e => setEnjuage(e.target.value)} style={inputStyle} placeholder="0" />
@@ -636,35 +641,34 @@ function OTDetalleContent() {
                 <textarea value={notas} onChange={e => setNotas(e.target.value)} style={{ ...inputStyle, height: "60px", resize: "vertical" }} />
               </ModalField>
               {(() => {
-                const aguaTanque = ot.ot_aplicadores.reduce((s, ap) =>
-                  s + (ap.cantidad_maquinadas ?? 0) * (ap.pulverizador?.capacidad_lt ?? 0), 0);
-                const mojRealVal = parseFloat(mojamientoReal) || 0;
-                const aguaEstim  = mojRealVal > 0 ? mojRealVal * superficieTotal : 0;
-                const mojSolVal  = ot.mojamiento_solicitado_ltha ?? 0;
-
-                if (aguaTanque > 0) {
+                const mojRealVal   = parseFloat(mojamientoReal) || 0;
+                const remanenteLtV = parseFloat(remanente) || 0;
+                const aguaCampo    = mojRealVal * superficieTotal;
+                const aguaTotal    = aguaCampo + remanenteLtV;
+                const mojSolVal    = ot.mojamiento_solicitado_ltha ?? 0;
+                if (mojRealVal > 0) {
                   return (
-                    <p style={{ fontSize: "12px", color: "#15803d", marginTop: "8px", background: "#f0fdf4", borderRadius: "6px", padding: "8px 10px" }}>
-                      Volumen real (tanques): <strong>{aguaTanque.toLocaleString("es-CL")} lt</strong>
-                      {ot.ot_aplicadores.map((ap, i) => ap.cantidad_maquinadas != null && ap.pulverizador?.capacidad_lt
-                        ? <span key={i}> · {ap.cantidad_maquinadas} maq × {ap.pulverizador.capacidad_lt} lt</span>
-                        : null
+                    <div style={{ fontSize: "12px", marginTop: "10px", background: "#f0fdf4", borderRadius: "6px", padding: "10px 12px", display: "flex", flexDirection: "column", gap: "3px" }}>
+                      <span style={{ color: "#15803d" }}>
+                        Campo: <strong>{aguaCampo.toLocaleString("es-CL")} lt</strong>
+                        {" "}({mojRealVal} lt/ha × {superficieTotal.toFixed(2)} ha)
+                      </span>
+                      {remanenteLtV > 0 && (
+                        <span style={{ color: "#d97706" }}>
+                          Barbecho: <strong>{remanenteLtV.toLocaleString("es-CL")} lt</strong>
+                          {" → se registrará como salida barbecho en bodega"}
+                        </span>
                       )}
-                    </p>
-                  );
-                }
-                if (aguaEstim > 0) {
-                  return (
-                    <p style={{ fontSize: "12px", color: "#1d4ed8", marginTop: "8px", background: "#eff6ff", borderRadius: "6px", padding: "8px 10px" }}>
-                      Volumen estimado: <strong>{aguaEstim.toLocaleString("es-CL")} lt</strong>
-                      {" "}({mojRealVal} lt/ha × {superficieTotal.toFixed(2)} ha)
-                      {mojSolVal > 0 && ` · Calibración planificada: ${mojSolVal} lt/ha`}
-                    </p>
+                      <span style={{ color: "#6b7280" }}>
+                        Total agua: <strong>{aguaTotal.toLocaleString("es-CL")} lt</strong>
+                        {mojSolVal > 0 && ` (teórico: ${(mojSolVal * superficieTotal).toLocaleString("es-CL")} lt)`}
+                      </span>
+                    </div>
                   );
                 }
                 return (
                   <p style={{ fontSize: "12px", color: "#d97706", marginTop: "8px" }}>
-                    Ingresa el mojamiento real para ajustar el consumo al volumen aplicado.
+                    Ingresa el mojamiento real (lt/ha) para calcular el consumo por volumen aplicado.
                   </p>
                 );
               })()}
