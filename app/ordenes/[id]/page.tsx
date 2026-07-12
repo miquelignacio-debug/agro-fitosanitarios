@@ -26,6 +26,7 @@ type OTProducto = {
     formulacion: string | null;
     especies_autorizadas: string[] | null;
     unidad_dosis: string | null;
+    unidad_bodega: "lt" | "kg" | null;
   };
 };
 
@@ -100,7 +101,7 @@ function OTDetalleContent() {
   const [enjuage,        setEnjuage]        = useState("");
   const [showEjecucion,  setShowEjecucion]  = useState(false);
 
-  const PRODUCTOS_SELECT = "id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, dosis_por_maquinada, producto:productos(nombre_comercial, ingrediente_activo, concentracion_ia, formulacion, especies_autorizadas, unidad_dosis)";
+  const PRODUCTOS_SELECT = "id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, dosis_por_maquinada, producto:productos(nombre_comercial, ingrediente_activo, concentracion_ia, formulacion, especies_autorizadas, unidad_dosis, unidad_bodega)";
   const APLICADORES_SELECT_V10 = "id, cantidad_maquinadas, operador:operadores(nombre), personal:personal!personal_id(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo, capacidad_lt)";
   const APLICADORES_SELECT_FALLBACK = "id, cantidad_maquinadas, operador:operadores(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo, capacidad_lt)";
 
@@ -165,11 +166,21 @@ function OTDetalleContent() {
       return;
     }
 
-    setTransitioning(true);
+    const mojSol = ot.mojamiento_solicitado_ltha ?? 0;
+    if (mojSol <= 0 && ot.ot_productos.some(p => p.dosis_unidad.includes("/ha"))) {
+      setTransError("Hay productos con dosis en /ha pero la OT no tiene mojamiento solicitado configurado. Editá la OT y completá el mojamiento solicitado antes de finalizar.");
+      return;
+    }
 
-    const mojSol      = ot.mojamiento_solicitado_ltha ?? 0;
     const remanenteLt = parseFloat(remanente) || 0;
     const supTotal    = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
+
+    if (supTotal <= 0 && remanenteLt <= 0) {
+      setTransError("La OT no tiene cuarteles con superficie asignada y no hay remanente al barbecho. Sin un volumen de agua no es posible calcular el consumo de productos.");
+      return;
+    }
+
+    setTransitioning(true);
 
     // Agua aplicada al campo (mojamiento_real × ha) y remanente al barbecho
     const aguaCampoLt    = mojReal * supTotal;
@@ -183,7 +194,7 @@ function OTDetalleContent() {
       const consumoCampo    = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaCampoLt);
       const consumoBarbecho = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaBarbechoLt);
       const dosisMaq        = calcDosisMaq(p.dosis_real, p.dosis_unidad, mojSol, capacidadLt);
-      const unidadStock     = p.producto.unidad_dosis || p.dosis_unidad.split("/")[0] || "lt";
+      const unidadStock     = p.producto.unidad_bodega || p.dosis_unidad.split("/")[0] || "lt";
       return { p, consumoCampo, consumoBarbecho, dosisMaq, unidadStock };
     });
 
@@ -203,7 +214,7 @@ function OTDetalleContent() {
       return;
     }
 
-    // Actualizar OT
+    // Actualizar OT — remanente_lt va en UPDATE separado por si falta migration_v13
     const { error: otError } = await supabase.from("ordenes_trabajo").update({
       estado: "finalizada",
       hora_inicio: horaInicio || null,
@@ -211,7 +222,6 @@ function OTDetalleContent() {
       viento_kmh:              viento      ? parseFloat(viento)      : null,
       temperatura_c:           temperatura ? parseFloat(temperatura) : null,
       mojamiento_real_ltha:    mojReal     || null,
-      remanente_lt:            remanenteLt || null,
       enjuage_pulverizador_lt: enjuage     ? parseFloat(enjuage)     : null,
       notas:        notas || null,
       updated_at:   new Date().toISOString(),
@@ -219,29 +229,53 @@ function OTDetalleContent() {
 
     if (otError) { setTransError(`Error al finalizar: ${otError.message}`); setTransitioning(false); return; }
 
-    // Insertar movimientos de stock: salida campo + salida barbecho (separados)
-    const fecha = ot.fecha_aplicacion || new Date().toISOString().slice(0, 10);
-    const stockInserts: object[] = [];
-    consumos.forEach(({ p, consumoCampo, consumoBarbecho, unidadStock }) => {
-      if (consumoCampo > 0) {
-        stockInserts.push({
-          empresa_id: ot.empresa_id, producto_id: p.producto_id,
-          tipo: "salida", cantidad: consumoCampo, unidad: unidadStock, fecha, ot_id: ot.id,
-        });
-      }
-      if (consumoBarbecho > 0) {
-        stockInserts.push({
-          empresa_id: ot.empresa_id, producto_id: p.producto_id,
-          tipo: "salida_barbecho", cantidad: consumoBarbecho, unidad: unidadStock, fecha, ot_id: ot.id,
-          notas: `Remanente barbecho (${remanenteLt} lt agua)`,
-        });
-      }
-    });
+    // Guardar remanente_lt por separado (requiere migration_v13; si falla, OT igual queda finalizada)
+    if (remanenteLt > 0) {
+      await supabase.from("ordenes_trabajo").update({ remanente_lt: remanenteLt }).eq("id", ot.id);
+    }
 
-    if (stockInserts.length) {
-      const { error: stockError } = await supabase.from("stock_movimientos").insert(stockInserts);
+    // Insertar movimientos de stock: salida campo y salida barbecho en dos batches separados
+    // (así si salida_barbecho falla por constraint, los movimientos campo igual quedan registrados)
+    const fecha = ot.fecha_aplicacion || new Date().toISOString().slice(0, 10);
+
+    const salidaCampo = consumos
+      .filter(({ consumoCampo }) => consumoCampo > 0)
+      .map(({ p, consumoCampo, unidadStock }) => ({
+        empresa_id: ot.empresa_id, producto_id: p.producto_id,
+        tipo: "salida" as const, cantidad: consumoCampo, unidad: unidadStock, fecha, ot_id: ot.id,
+      }));
+
+    const salidaBarbecho = consumos
+      .filter(({ consumoBarbecho }) => consumoBarbecho > 0)
+      .map(({ p, consumoBarbecho, unidadStock }) => ({
+        empresa_id: ot.empresa_id, producto_id: p.producto_id,
+        tipo: "salida_barbecho" as const, cantidad: consumoBarbecho, unidad: unidadStock, fecha, ot_id: ot.id,
+        notas: `Remanente barbecho (${remanenteLt} lt agua)`,
+      }));
+
+    if (salidaCampo.length === 0 && salidaBarbecho.length === 0) {
+      setTransError("OT finalizada, pero no se pudo calcular consumo de productos (verificá que las unidades de dosis sean /ha o /100lt).");
+      setTransitioning(false);
+      setShowEjecucion(false);
+      await load();
+      return;
+    }
+
+    if (salidaCampo.length) {
+      const { error: stockError } = await supabase.from("stock_movimientos").insert(salidaCampo);
       if (stockError) {
-        setTransError(`OT finalizada, pero error al descontar stock: ${stockError.message}`);
+        setTransError(`OT finalizada, pero error al registrar salida de campo: ${stockError.message}`);
+        setTransitioning(false);
+        setShowEjecucion(false);
+        await load();
+        return;
+      }
+    }
+
+    if (salidaBarbecho.length) {
+      const { error: barbeError } = await supabase.from("stock_movimientos").insert(salidaBarbecho);
+      if (barbeError) {
+        setTransError(`Stock campo registrado, pero error en remanente barbecho: ${barbeError.message}. Es probable que falte ejecutar migration_v13 en Supabase.`);
         setTransitioning(false);
         setShowEjecucion(false);
         await load();
@@ -654,7 +688,7 @@ function OTDetalleContent() {
                 const mojSolVal    = ot.mojamiento_solicitado_ltha ?? 0;
                 if (mojRealVal > 0) {
                   return (
-                    <div style={{ fontSize: "12px", marginTop: "10px", background: "#f0fdf4", borderRadius: "6px", padding: "10px 12px", display: "flex", flexDirection: "column", gap: "3px" }}>
+                    <div style={{ fontSize: "12px", marginTop: "10px", background: "#f0fdf4", borderRadius: "6px", padding: "10px 12px", display: "flex", flexDirection: "column", gap: "4px" }}>
                       <span style={{ color: "#15803d" }}>
                         Campo: <strong>{aguaCampo.toLocaleString("es-CL")} lt</strong>
                         {" "}({mojRealVal} lt/ha × {superficieTotal.toFixed(2)} ha)
@@ -669,6 +703,29 @@ function OTDetalleContent() {
                         Total agua: <strong>{aguaTotal.toLocaleString("es-CL")} lt</strong>
                         {mojSolVal > 0 && ` (teórico: ${(mojSolVal * superficieTotal).toLocaleString("es-CL")} lt)`}
                       </span>
+                      <div style={{ borderTop: "1px solid #bbf7d0", marginTop: "4px", paddingTop: "4px" }}>
+                        <span style={{ color: "#374151", fontWeight: 700 }}>Consumo estimado por producto:</span>
+                        {ot.ot_productos.map(p => {
+                          const cc = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSolVal, aguaCampo);
+                          const cb = remanenteLtV > 0 ? calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSolVal, remanenteLtV) : 0;
+                          const u  = p.producto.unidad_bodega || p.dosis_unidad.split("/")[0] || "lt";
+                          const total = cc + cb;
+                          return (
+                            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>
+                              <span style={{ color: "#374151" }}>{p.producto.nombre_comercial}</span>
+                              {total > 0
+                                ? <span style={{ color: "#15803d", fontWeight: 600 }}>
+                                    {cc > 0 && `${cc} ${u} campo`}
+                                    {cb > 0 && ` + ${cb} ${u} barbecho`}
+                                  </span>
+                                : <span style={{ color: "#dc2626", fontWeight: 600 }}>
+                                    ⚠ 0 — revisá unidad de dosis ({p.dosis_unidad}) y mojamiento solicitado
+                                  </span>
+                              }
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 }

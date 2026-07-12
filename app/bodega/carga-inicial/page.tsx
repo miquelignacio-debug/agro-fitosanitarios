@@ -170,7 +170,17 @@ function CargaInicialContent() {
             tipo_doc,
             num_doc: String(r[kNumDoc] || "").trim(),
             proveedor: String(r[kProv] || "").trim(),
-            precio_unitario: kPrecio && r[kPrecio] !== "" ? parseFloat(String(r[kPrecio]).replace(/[^0-9.,]/g, "").replace(",", ".")) || null : null,
+            precio_unitario: (() => {
+              if (!kPrecio || r[kPrecio] === "") return null;
+              const raw = String(r[kPrecio]).replace(/[^0-9.,]/g, "");
+              const lastDot = raw.lastIndexOf(".");
+              const lastComma = raw.lastIndexOf(",");
+              // European format: 1.234,50 — comma is decimal separator
+              const normalized = lastComma > lastDot
+                ? raw.replace(/\./g, "").replace(",", ".")
+                : raw.replace(/,/g, "");
+              return parseFloat(normalized) || null;
+            })(),
             producto_id: matchParcial?.id || null,
             producto_match: matchParcial?.nombre_comercial || "",
             _selected: !!matchParcial,

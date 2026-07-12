@@ -8,6 +8,10 @@ import Nav from "@/lib/nav";
 import type { Empresa, OrdenTrabajo } from "@/lib/types";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
 
+type OTConCuarteles = OrdenTrabajo & {
+  ot_cuarteles: { cuartel: { codigo: string } }[];
+};
+
 function OrdenesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -15,7 +19,7 @@ function OrdenesContent() {
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [empresaId, setEmpresaId] = useState(empresaParam);
-  const [ordenes, setOrdenes] = useState<OrdenTrabajo[]>([]);
+  const [ordenes, setOrdenes] = useState<OTConCuarteles[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState("todos");
 
@@ -37,10 +41,10 @@ function OrdenesContent() {
     setLoading(true);
     const { data } = await supabase
       .from("ordenes_trabajo")
-      .select("*")
+      .select("*, ot_cuarteles(cuartel:cuarteles(codigo))")
       .eq("empresa_id", eid)
       .order("numero", { ascending: false });
-    setOrdenes((data as OrdenTrabajo[]) || []);
+    setOrdenes((data as OTConCuarteles[]) || []);
     setLoading(false);
   };
 
@@ -107,7 +111,7 @@ function OrdenesContent() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["N° OT", "Estado", "Fecha solicitud", "Fecha aplicación", "Campo", "Función", "Cuarteles", ""].map((h) => (
+                  {["N° OT", "Estado", "Fecha solicitud", "Fecha aplicación", "Función", "Cuarteles", ""].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -130,10 +134,9 @@ function OrdenesContent() {
                     </td>
                     <td style={td}>{ot.fecha_solicitud}</td>
                     <td style={td}>{ot.fecha_aplicacion || "—"}</td>
-                    <td style={td}>{ot.campo || "—"}</td>
                     <td style={td}>{ot.funcion?.join(", ") || "—"}</td>
                     <td style={{ ...td, color: "#6b7280" }}>
-                      {/* loaded via join on detail page */}—
+                      {ot.ot_cuarteles?.map(c => c.cuartel?.codigo).filter(Boolean).join(", ") || "—"}
                     </td>
                     <td style={td}>
                       <Link href={`/ordenes/${ot.id}?empresa=${empresaId}`} style={viewLink}>
@@ -144,7 +147,7 @@ function OrdenesContent() {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={8} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
+                    <td colSpan={7} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
                       No hay órdenes con este estado.
                     </td>
                   </tr>
