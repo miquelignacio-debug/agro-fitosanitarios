@@ -208,14 +208,24 @@ function CargaInicialContent() {
         notas: "Inventario inicial",
       }))
     );
-    setImportando(false);
     if (err) {
+      setImportando(false);
       setErrorMsg(err.message);
-    } else {
-      setResultado({ ok: seleccionadas.length });
-      setFilas([]);
-      if (fileRef.current) fileRef.current.value = "";
+      return;
     }
+
+    // Actualizar unidad_bodega en la ficha de cada producto
+    const ltIds = seleccionadas.filter(f => f.unidad === "lt").map(f => f.producto_id!);
+    const kgIds = seleccionadas.filter(f => f.unidad === "kg").map(f => f.producto_id!);
+    await Promise.all([
+      ltIds.length ? supabase.from("productos").update({ unidad_bodega: "lt" }).in("id", ltIds) : Promise.resolve(),
+      kgIds.length ? supabase.from("productos").update({ unidad_bodega: "kg" }).in("id", kgIds) : Promise.resolve(),
+    ]);
+
+    setImportando(false);
+    setResultado({ ok: seleccionadas.length });
+    setFilas([]);
+    if (fileRef.current) fileRef.current.value = "";
   };
 
   const selCount   = filas.filter(f => f._selected).length;
