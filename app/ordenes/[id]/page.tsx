@@ -56,28 +56,36 @@ const TRANS_LABEL: Record<string, string> = {
   emitida: "Emitir / Aprobar", en_ejecucion: "Iniciar ejecución", finalizada: "Finalizar", anulada: "Anular",
 };
 
-// Calcula consumo total desde volumen real de agua (maquinadas × capacidad).
-// aguaRealLt = total de litros usados; si 0, recae en mojReal × supTotal.
-function calcConsumo(dosis: number, unidad: string, mojReal: number, supTotal: number, aguaRealLt: number): number {
+// Calcula consumo total siempre desde volumen de agua real.
+// mojSol  = calibración planificada (L/ha) — factor de conversión /ha → /100lt
+// mojReal = calibración real aplicada (L/ha) — para estimar agua cuando no hay datos de tanque
+// aguaRealLt = maquinadas × capacidad_lt (0 si no hay datos de tanque)
+function calcConsumo(
+  dosis: number, unidad: string,
+  mojSol: number, supTotal: number,
+  aguaRealLt: number, mojReal: number,
+): number {
   const r = (n: number) => Math.round(n * 1000) / 1000;
-  const agua = aguaRealLt > 0 ? aguaRealLt : mojReal * supTotal;
+  // Agua real: prefiere maquinadas × capacidad; estima desde mojamiento × área si no hay datos
+  const agua = aguaRealLt > 0 ? aguaRealLt : (mojReal > 0 ? mojReal * supTotal : 0);
   if (unidad.includes("/100")) {
     return agua > 0 ? r((dosis / 100) * agua) : 0;
   }
   if (unidad.includes("/ha")) {
-    // Convierte a base-volumen: dosis/ha ÷ calibración × litros totales reales
-    if (aguaRealLt > 0 && mojReal > 0) return r(dosis * aguaRealLt / mojReal);
-    return r(dosis * supTotal);
+    // Convierte /ha → /100lt usando calibración planificada, aplica al agua real
+    const calibracion = mojSol > 0 ? mojSol : mojReal;
+    if (calibracion > 0 && agua > 0) return r(dosis * agua / calibracion);
+    return r(dosis * supTotal); // último recurso: sin datos de agua
   }
   return 0;
 }
 
-// Dosis por maquinada dado la capacidad del tanque
-function calcDosisMaq(dosis: number, unidad: string, mojReal: number, capacidadLt: number): number | null {
+// Dosis por maquinada usando la calibración planificada (mojSol)
+function calcDosisMaq(dosis: number, unidad: string, mojSol: number, capacidadLt: number): number | null {
   if (capacidadLt <= 0) return null;
   const r = (n: number) => Math.round(n * 1000) / 1000;
   if (unidad.includes("/100")) return r(dosis * capacidadLt / 100);
-  if (unidad.includes("/ha") && mojReal > 0) return r(dosis * capacidadLt / mojReal);
+  if (unidad.includes("/ha") && mojSol > 0) return r(dosis * capacidadLt / mojSol);
   return null;
 }
 
@@ -165,6 +173,7 @@ function OTDetalleContent() {
     setTransitioning(true);
 
     const mojReal = parseFloat(mojamientoReal) || 0;
+    const mojSol  = ot.mojamiento_solicitado_ltha ?? 0;
     const supTotal = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
 
     // Volumen real total = suma de (maquinadas × capacidad_lt) por cada aplicador
@@ -177,8 +186,8 @@ function OTDetalleContent() {
     // Calcular consumo y dosis por maquinada para cada producto
     const consumos = ot.ot_productos.map(p => ({
       p,
-      consumo: calcConsumo(p.dosis_real, p.dosis_unidad, mojReal, supTotal, aguaRealLt),
-      dosisMaq: calcDosisMaq(p.dosis_real, p.dosis_unidad, mojReal, capacidadLt),
+      consumo: calcConsumo(p.dosis_real, p.dosis_unidad, mojSol, supTotal, aguaRealLt, mojReal),
+      dosisMaq: calcDosisMaq(p.dosis_real, p.dosis_unidad, mojSol, capacidadLt),
       unidadStock: p.producto.unidad_dosis || p.dosis_unidad.split("/")[0] || "lt",
     }));
 
@@ -627,24 +636,35 @@ function OTDetalleContent() {
                 <textarea value={notas} onChange={e => setNotas(e.target.value)} style={{ ...inputStyle, height: "60px", resize: "vertical" }} />
               </ModalField>
               {(() => {
-                const aguaCalc = ot.ot_aplicadores.reduce((s, ap) =>
+                const aguaTanque = ot.ot_aplicadores.reduce((s, ap) =>
                   s + (ap.cantidad_maquinadas ?? 0) * (ap.pulverizador?.capacidad_lt ?? 0), 0);
-                if (aguaCalc > 0) {
+                const mojRealVal = parseFloat(mojamientoReal) || 0;
+                const aguaEstim  = mojRealVal > 0 ? mojRealVal * superficieTotal : 0;
+                const mojSolVal  = ot.mojamiento_solicitado_ltha ?? 0;
+
+                if (aguaTanque > 0) {
                   return (
                     <p style={{ fontSize: "12px", color: "#15803d", marginTop: "8px", background: "#f0fdf4", borderRadius: "6px", padding: "8px 10px" }}>
-                      Volumen real: <strong>{aguaCalc.toLocaleString("es-CL")} lt</strong>
+                      Volumen real (tanques): <strong>{aguaTanque.toLocaleString("es-CL")} lt</strong>
                       {ot.ot_aplicadores.map((ap, i) => ap.cantidad_maquinadas != null && ap.pulverizador?.capacidad_lt
-                        ? <span key={i}> ({ap.cantidad_maquinadas} maq × {ap.pulverizador.capacidad_lt} lt)</span>
+                        ? <span key={i}> · {ap.cantidad_maquinadas} maq × {ap.pulverizador.capacidad_lt} lt</span>
                         : null
                       )}
-                      {" — el consumo de todos los productos se calculará desde este volumen."}
+                    </p>
+                  );
+                }
+                if (aguaEstim > 0) {
+                  return (
+                    <p style={{ fontSize: "12px", color: "#1d4ed8", marginTop: "8px", background: "#eff6ff", borderRadius: "6px", padding: "8px 10px" }}>
+                      Volumen estimado: <strong>{aguaEstim.toLocaleString("es-CL")} lt</strong>
+                      {" "}({mojRealVal} lt/ha × {superficieTotal.toFixed(2)} ha)
+                      {mojSolVal > 0 && ` · Calibración planificada: ${mojSolVal} lt/ha`}
                     </p>
                   );
                 }
                 return (
                   <p style={{ fontSize: "12px", color: "#d97706", marginTop: "8px" }}>
-                    Sin capacidad de pulverizador configurada — el cálculo usará mojamiento × superficie.
-                    {ot.ot_productos.some(p => p.dosis_unidad.includes("/100")) && " Ingresa el mojamiento real para productos /100lt."}
+                    Ingresa el mojamiento real para ajustar el consumo al volumen aplicado.
                   </p>
                 );
               })()}
