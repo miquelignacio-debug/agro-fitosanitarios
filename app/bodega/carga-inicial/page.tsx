@@ -15,6 +15,7 @@ type FilaImport = {
   tipo_doc: "guia_despacho" | "factura" | null;
   num_doc: string;
   proveedor: string;
+  precio_unitario: number | null;
   producto_id: string | null;
   producto_match: string;
   _selected: boolean;
@@ -87,13 +88,13 @@ function CargaInicialContent() {
     const wb = utils.book_new();
 
     // Hoja 1: Inventario
-    const encabezados = ["Producto (nombre_comercial)", "Cantidad", "Unidad", "Fecha (dd/mm/yyyy)", "Tipo Documento", "N° Documento", "Proveedor"];
+    const encabezados = ["Producto (nombre_comercial)", "Cantidad", "Unidad", "Fecha (dd/mm/yyyy)", "Tipo Documento", "N° Documento", "Proveedor", "Precio Unitario (USD)"];
     const ejemplos = [
-      ["Nomolt 150 SC", 5, "lt", "01/06/2026", "guia_despacho", "GD-001234", "Agroventas SpA"],
-      ["Captan 80 WP", 20, "kg", "01/06/2026", "factura", "F-56789", ""],
+      ["Nomolt 150 SC", 5, "lt", "01/06/2026", "guia_despacho", "GD-001234", "Agroventas SpA", 45.50],
+      ["Captan 80 WP", 20, "kg", "01/06/2026", "factura", "F-56789", "", 14.50],
     ];
     const ws1 = utils.aoa_to_sheet([encabezados, ...ejemplos]);
-    ws1["!cols"] = [{ wch: 42 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 16 }, { wch: 22 }];
+    ws1["!cols"] = [{ wch: 42 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 20 }, { wch: 16 }, { wch: 22 }, { wch: 20 }];
     utils.book_append_sheet(wb, ws1, "Inventario");
 
     // Hoja 2: Catálogo de productos para referencia
@@ -140,6 +141,7 @@ function CargaInicialContent() {
       const kTipoDoc = col(["tipo doc", "tipo_doc", "tipo documento"]);
       const kNumDoc  = col(["n° doc", "num doc", "numero doc", "n°"]);
       const kProv    = col(["proveedor"]);
+      const kPrecio  = col(["precio unitario", "precio", "precio unit", "price"]);
 
       const parsed: FilaImport[] = rows
         .map(r => {
@@ -168,6 +170,7 @@ function CargaInicialContent() {
             tipo_doc,
             num_doc: String(r[kNumDoc] || "").trim(),
             proveedor: String(r[kProv] || "").trim(),
+            precio_unitario: kPrecio && r[kPrecio] !== "" ? parseFloat(String(r[kPrecio]).replace(/[^0-9.,]/g, "").replace(",", ".")) || null : null,
             producto_id: matchParcial?.id || null,
             producto_match: matchParcial?.nombre_comercial || "",
             _selected: !!matchParcial,
@@ -201,6 +204,7 @@ function CargaInicialContent() {
         documento_tipo: f.tipo_doc || null,
         documento_numero: f.num_doc || null,
         proveedor: f.proveedor || null,
+        precio_unitario: f.precio_unitario || null,
         notas: "Inventario inicial",
       }))
     );
@@ -289,6 +293,7 @@ function CargaInicialContent() {
                     <th style={th}>Match en catálogo</th>
                     <th style={th}>Cantidad</th>
                     <th style={th}>Unidad</th>
+                    <th style={th}>Precio Unit. (USD)</th>
                     <th style={th}>Fecha</th>
                     <th style={th}>Documento</th>
                     <th style={th}>Proveedor</th>
@@ -306,6 +311,9 @@ function CargaInicialContent() {
                       </td>
                       <td style={{ ...td, textAlign: "right" }}>{f.cantidad}</td>
                       <td style={td}>{f.unidad}</td>
+                      <td style={{ ...td, textAlign: "right", color: f.precio_unitario ? "#15803d" : "#9ca3af" }}>
+                        {f.precio_unitario != null ? `$${f.precio_unitario.toFixed(2)}` : "—"}
+                      </td>
                       <td style={td}>{f.fecha}</td>
                       <td style={td}>
                         {f.tipo_doc ? `${f.tipo_doc === "factura" ? "Factura" : "Guía"} ${f.num_doc}` : f.num_doc || "—"}
