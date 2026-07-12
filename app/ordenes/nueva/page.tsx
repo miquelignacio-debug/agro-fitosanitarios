@@ -263,10 +263,18 @@ function NuevaOTContent() {
     const otId = ot.id;
 
     const superficieTotal = cuartelesOT.reduce((s, c) => s + (parseFloat(c.superficie_ha) || 0), 0);
+    const mojVal = parseFloat(mojamientoSol) || 0;
+    const pulv = implementos.find(p => p.id === aplicadorOT.pulverizador_id);
+    const capacidadLt = pulv?.capacidad_lt ?? 0;
 
     const productosRows = productosOT.filter(p => p.producto_id && p.dosis_real).map(p => {
       const dosis = parseFloat(p.dosis_real);
       const carencia = parseInt(p.carencia_dias) || 0;
+      let dosisMaq: number | null = null;
+      if (capacidadLt > 0) {
+        if (p.dosis_unidad.includes("/100")) dosisMaq = Math.round(dosis * capacidadLt / 100 * 1000) / 1000;
+        else if (p.dosis_unidad.includes("/ha") && mojVal > 0) dosisMaq = Math.round(dosis * capacidadLt / mojVal * 1000) / 1000;
+      }
       return {
         ot_id: otId,
         producto_id: p.producto_id,
@@ -277,8 +285,8 @@ function NuevaOTContent() {
         fecha_viable: fechaAplicacion
           ? new Date(new Date(fechaAplicacion).getTime() + carencia * 86400000).toISOString().slice(0, 10)
           : null,
-        consumo_total: p.consumo_total ? parseFloat(p.consumo_total)
-          : p.dosis_unidad.endsWith("/ha") ? dosis * superficieTotal : null,
+        dosis_por_maquinada: dosisMaq,
+        consumo_total: null, // se calcula definitivamente al finalizar
       };
     });
 

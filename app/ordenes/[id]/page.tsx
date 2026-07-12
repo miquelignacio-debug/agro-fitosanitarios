@@ -18,6 +18,7 @@ type OTProducto = {
   rei_horas: number;
   fecha_viable: string | null;
   consumo_total: number | null;
+  dosis_por_maquinada: number | null;
   producto: {
     nombre_comercial: string;
     ingrediente_activo: string | null;
@@ -55,16 +56,29 @@ const TRANS_LABEL: Record<string, string> = {
   emitida: "Emitir / Aprobar", en_ejecucion: "Iniciar ejecución", finalizada: "Finalizar", anulada: "Anular",
 };
 
-// Calcula consumo total dado dosis, unidad, mojamiento real y superficie
-function calcConsumo(dosis: number, unidad: string, mojReal: number, supTotal: number): number {
-  if (unidad.includes("/ha")) {
-    return Math.round(dosis * supTotal * 1000) / 1000;
+// Calcula consumo total desde volumen real de agua (maquinadas × capacidad).
+// aguaRealLt = total de litros usados; si 0, recae en mojReal × supTotal.
+function calcConsumo(dosis: number, unidad: string, mojReal: number, supTotal: number, aguaRealLt: number): number {
+  const r = (n: number) => Math.round(n * 1000) / 1000;
+  const agua = aguaRealLt > 0 ? aguaRealLt : mojReal * supTotal;
+  if (unidad.includes("/100")) {
+    return agua > 0 ? r((dosis / 100) * agua) : 0;
   }
-  // /100lt o /100L
-  if (mojReal > 0) {
-    return Math.round((dosis / 100) * mojReal * supTotal * 1000) / 1000;
+  if (unidad.includes("/ha")) {
+    // Convierte a base-volumen: dosis/ha ÷ calibración × litros totales reales
+    if (aguaRealLt > 0 && mojReal > 0) return r(dosis * aguaRealLt / mojReal);
+    return r(dosis * supTotal);
   }
   return 0;
+}
+
+// Dosis por maquinada dado la capacidad del tanque
+function calcDosisMaq(dosis: number, unidad: string, mojReal: number, capacidadLt: number): number | null {
+  if (capacidadLt <= 0) return null;
+  const r = (n: number) => Math.round(n * 1000) / 1000;
+  if (unidad.includes("/100")) return r(dosis * capacidadLt / 100);
+  if (unidad.includes("/ha") && mojReal > 0) return r(dosis * capacidadLt / mojReal);
+  return null;
 }
 
 function OTDetalleContent() {
@@ -91,7 +105,7 @@ function OTDetalleContent() {
   const [enjuage,        setEnjuage]        = useState("");
   const [showEjecucion,  setShowEjecucion]  = useState(false);
 
-  const PRODUCTOS_SELECT = "id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, producto:productos(nombre_comercial, ingrediente_activo, concentracion_ia, formulacion, especies_autorizadas, unidad_dosis)";
+  const PRODUCTOS_SELECT = "id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, dosis_por_maquinada, producto:productos(nombre_comercial, ingrediente_activo, concentracion_ia, formulacion, especies_autorizadas, unidad_dosis)";
   const APLICADORES_SELECT_V10 = "id, cantidad_maquinadas, operador:operadores(nombre), personal:personal!personal_id(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo, capacidad_lt)";
   const APLICADORES_SELECT_FALLBACK = "id, cantidad_maquinadas, operador:operadores(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo, capacidad_lt)";
 
@@ -153,17 +167,28 @@ function OTDetalleContent() {
     const mojReal = parseFloat(mojamientoReal) || 0;
     const supTotal = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
 
-    // Calcular consumo una sola vez por producto
+    // Volumen real total = suma de (maquinadas × capacidad_lt) por cada aplicador
+    const aguaRealLt = ot.ot_aplicadores.reduce((sum, ap) =>
+      sum + (ap.cantidad_maquinadas ?? 0) * (ap.pulverizador?.capacidad_lt ?? 0), 0);
+
+    // Capacidad del primer pulverizador con datos (para dosis_por_maquinada)
+    const capacidadLt = ot.ot_aplicadores.find(ap => ap.pulverizador?.capacidad_lt)?.pulverizador?.capacidad_lt ?? 0;
+
+    // Calcular consumo y dosis por maquinada para cada producto
     const consumos = ot.ot_productos.map(p => ({
       p,
-      consumo: calcConsumo(p.dosis_real, p.dosis_unidad, mojReal, supTotal),
+      consumo: calcConsumo(p.dosis_real, p.dosis_unidad, mojReal, supTotal, aguaRealLt),
+      dosisMaq: calcDosisMaq(p.dosis_real, p.dosis_unidad, mojReal, capacidadLt),
       unidadStock: p.producto.unidad_dosis || p.dosis_unidad.split("/")[0] || "lt",
     }));
 
-    // Actualizar consumo_total en ot_productos
+    // Actualizar consumo_total y dosis_por_maquinada en ot_productos
     const updateResults = await Promise.all(
-      consumos.map(({ p, consumo }) =>
-        supabase.from("ot_productos").update({ consumo_total: consumo }).eq("id", p.id)
+      consumos.map(({ p, consumo, dosisMaq }) =>
+        supabase.from("ot_productos").update({
+          consumo_total: consumo,
+          dosis_por_maquinada: dosisMaq,
+        }).eq("id", p.id)
       )
     );
     const updateErr = updateResults.find(r => r.error)?.error;
@@ -526,8 +551,11 @@ function OTDetalleContent() {
                     )}
                     <div style={{ display: "flex", gap: "16px", fontSize: "13px", marginTop: "2px", flexWrap: "wrap" }}>
                       <span>Dosis: <strong>{p.dosis_real} {p.dosis_unidad}</strong></span>
+                      {p.dosis_por_maquinada != null && (
+                        <span style={{ color: "#1a4731" }}>Por maquinada: <strong>{p.dosis_por_maquinada} {p.dosis_unidad.split("/")[0]}</strong></span>
+                      )}
                       {p.consumo_total != null && p.consumo_total > 0 && (
-                        <span>Total: <strong>{p.consumo_total} {unidadDisplay}</strong></span>
+                        <span>Consumo total: <strong>{p.consumo_total} {unidadDisplay}</strong></span>
                       )}
                       <span style={{ color: "#d97706" }}>Carencia: {p.carencia_dias}d</span>
                       <span style={{ color: "#7c3aed" }}>Reingreso: {p.rei_horas}h</span>
@@ -598,11 +626,28 @@ function OTDetalleContent() {
               <ModalField label="Notas finales">
                 <textarea value={notas} onChange={e => setNotas(e.target.value)} style={{ ...inputStyle, height: "60px", resize: "vertical" }} />
               </ModalField>
-              {!mojamientoReal && ot.ot_productos.some(p => p.dosis_unidad.includes("/100")) && (
-                <p style={{ fontSize: "12px", color: "#d97706", marginTop: "8px" }}>
-                  Hay productos con dosis /100lt — ingresa el mojamiento real para calcular su consumo.
-                </p>
-              )}
+              {(() => {
+                const aguaCalc = ot.ot_aplicadores.reduce((s, ap) =>
+                  s + (ap.cantidad_maquinadas ?? 0) * (ap.pulverizador?.capacidad_lt ?? 0), 0);
+                if (aguaCalc > 0) {
+                  return (
+                    <p style={{ fontSize: "12px", color: "#15803d", marginTop: "8px", background: "#f0fdf4", borderRadius: "6px", padding: "8px 10px" }}>
+                      Volumen real: <strong>{aguaCalc.toLocaleString("es-CL")} lt</strong>
+                      {ot.ot_aplicadores.map((ap, i) => ap.cantidad_maquinadas != null && ap.pulverizador?.capacidad_lt
+                        ? <span key={i}> ({ap.cantidad_maquinadas} maq × {ap.pulverizador.capacidad_lt} lt)</span>
+                        : null
+                      )}
+                      {" — el consumo de todos los productos se calculará desde este volumen."}
+                    </p>
+                  );
+                }
+                return (
+                  <p style={{ fontSize: "12px", color: "#d97706", marginTop: "8px" }}>
+                    Sin capacidad de pulverizador configurada — el cálculo usará mojamiento × superficie.
+                    {ot.ot_productos.some(p => p.dosis_unidad.includes("/100")) && " Ingresa el mojamiento real para productos /100lt."}
+                  </p>
+                );
+              })()}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "20px" }}>
                 <button onClick={() => setShowEjecucion(false)} style={cancelSmall}>Cancelar</button>
                 <button onClick={handleFinalizar} style={primaryBtn} disabled={transitioning}>
