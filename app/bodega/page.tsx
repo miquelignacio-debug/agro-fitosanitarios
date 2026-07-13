@@ -104,7 +104,7 @@ function BodegaContent() {
   const switchEmpresa = (eid: string) => {
     setEmpresaId(eid);
     router.push(`/bodega?empresa=${eid}`);
-    load(eid);
+    // No llamar load() aquí — el useEffect lo dispara al cambiar empresaParam
   };
 
   const empresa = empresas.find((e) => e.id === empresaId);
@@ -493,6 +493,11 @@ function BodegaContent() {
                 )}
               </tbody>
             </table>
+            {movimientos.length >= 200 && (
+              <p style={{ fontSize: "12px", color: "#d97706", padding: "10px 14px", background: "#fffbeb", borderTop: "1px solid #fcd34d" }}>
+                ⚠ Mostrando los últimos 200 movimientos. El historial completo está disponible en la base de datos.
+              </p>
+            )}
           </div>
         )}
       </main>

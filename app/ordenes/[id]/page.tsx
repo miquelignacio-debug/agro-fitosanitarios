@@ -198,11 +198,11 @@ function OTDetalleContent() {
       return { p, consumoCampo, consumoBarbecho, dosisMaq, unidadStock };
     });
 
-    // Guardar consumo campo (sin barbecho) en ot_productos — es lo que va al cuaderno de campo
+    // Guardar consumo total (campo + barbecho) en ot_productos para cuaderno y PDFs
     const updateResults = await Promise.all(
-      consumos.map(({ p, consumoCampo, dosisMaq }) =>
+      consumos.map(({ p, consumoCampo, consumoBarbecho, dosisMaq }) =>
         supabase.from("ot_productos").update({
-          consumo_total:       consumoCampo,
+          consumo_total:       consumoCampo + consumoBarbecho,
           dosis_por_maquinada: dosisMaq,
         }).eq("id", p.id)
       )
@@ -303,14 +303,7 @@ function OTDetalleContent() {
 
     if (movsError) { setTransError(`Error al buscar movimientos: ${movsError.message}`); setTransitioning(false); return; }
 
-    // Eliminar los movimientos de salida de esta OT
-    if (movs && movs.length > 0) {
-      const ids = movs.map((m: { id: string }) => m.id);
-      const { error: delErr } = await supabase.from("stock_movimientos").delete().in("id", ids);
-      if (delErr) { setTransError(`Error al revertir stock: ${delErr.message}`); setTransitioning(false); return; }
-    }
-
-    // Limpiar datos de ejecución y volver a en_ejecucion
+    // Actualizar OT a en_ejecucion PRIMERO — si falla, stock no fue tocado
     const { error: reopenError } = await supabase.from("ordenes_trabajo").update({
       estado:                  "en_ejecucion",
       mojamiento_real_ltha:    null,
@@ -324,6 +317,13 @@ function OTDetalleContent() {
     }).eq("id", ot.id);
 
     if (reopenError) { setTransError(`Error al reabrir: ${reopenError.message}`); setTransitioning(false); return; }
+
+    // Eliminar movimientos de stock DESPUÉS — si falla, OT ya está en_ejecucion (usuario puede reintentar)
+    if (movs && movs.length > 0) {
+      const ids = movs.map((m: { id: string }) => m.id);
+      const { error: delErr } = await supabase.from("stock_movimientos").delete().in("id", ids);
+      if (delErr) { setTransError(`OT reabierta, pero error al revertir stock: ${delErr.message}`); setTransitioning(false); return; }
+    }
 
     // Limpiar consumo_total y dosis_por_maquinada de productos
     await Promise.all(
