@@ -148,8 +148,9 @@ function CuadernoContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Filtros
-  const [desde, setDesde] = useState("");
+  // Filtros de fecha — server-side (disparan recarga)
+  const currentYear = new Date().getFullYear();
+  const [desde, setDesde] = useState(`${currentYear}-01-01`);
   const [hasta, setHasta] = useState("");
   const [filtroCuartel, setFiltroCuartel] = useState("");
   const [filtroProducto, setFiltroProducto] = useState("");
@@ -157,8 +158,8 @@ function CuadernoContent() {
 
   useEffect(() => {
     if (!empresa) { setLoading(false); return; }
-    load();
-  }, [empresa]);
+    load(desde, hasta);
+  }, [empresa, desde, hasta]);
 
   const BASE_SELECT = `
     id, numero, estado, fecha_aplicacion, mojamiento_real_ltha, viento_kmh, temperatura_c, plagas_objetivo, objetivo_principal,
@@ -177,16 +178,21 @@ function CuadernoContent() {
       producto:productos(nombre_comercial, ingrediente_activo, CONC_IAformulacion))
   `;
 
-  const load = async () => {
+  const load = async (fechaDesde: string, fechaHasta: string) => {
     setLoading(true);
     setError("");
 
-    const q = (sel: string) => supabase
-      .from("ordenes_trabajo")
-      .select(sel)
-      .eq("empresa_id", empresa)
-      .neq("estado", "anulada")
-      .order("fecha_aplicacion", { ascending: false });
+    const q = (sel: string) => {
+      let query = supabase
+        .from("ordenes_trabajo")
+        .select(sel)
+        .eq("empresa_id", empresa)
+        .neq("estado", "anulada")
+        .order("fecha_aplicacion", { ascending: false });
+      if (fechaDesde) query = query.gte("fecha_aplicacion", fechaDesde);
+      if (fechaHasta) query = query.lte("fecha_aplicacion", fechaHasta);
+      return query;
+    };
 
     let { data, error: err } = await q(BASE_SELECT.replace("CONC_IA", "concentracion_ia, "));
     if (err?.message?.includes("concentracion_ia")) {
@@ -279,7 +285,7 @@ function CuadernoContent() {
           <div>
             <h1 style={pageTitle}>Cuaderno de Campo</h1>
             <p style={pageSub}>
-              Todas las aplicaciones en formato plano para tabla dinámica
+              Aplicaciones en formato plano — mostrando {desde ? `desde ${desde}` : "todo el historial"}
             </p>
           </div>
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
@@ -345,12 +351,21 @@ function CuadernoContent() {
             />
             Solo finalizadas
           </label>
-          {(desde || hasta || filtroCuartel || filtroProducto || soloFinalizadas) && (
+          {(filtroCuartel || filtroProducto || soloFinalizadas) && (
             <button
-              onClick={() => { setDesde(""); setHasta(""); setFiltroCuartel(""); setFiltroProducto(""); setSoloFinalizadas(false); }}
+              onClick={() => { setFiltroCuartel(""); setFiltroProducto(""); setSoloFinalizadas(false); }}
               style={clearBtn}
             >
               Limpiar filtros
+            </button>
+          )}
+          {(desde || hasta) && (
+            <button
+              onClick={() => { setDesde(""); setHasta(""); }}
+              style={{ ...clearBtn, color: "#1a4731", borderColor: "#1a4731" }}
+              title="Carga todo el historial sin filtro de fecha (puede ser lento)"
+            >
+              Ver todo el historial
             </button>
           )}
         </div>

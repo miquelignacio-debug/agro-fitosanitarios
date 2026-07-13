@@ -5,11 +5,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
+import { useRol } from "@/lib/useRol";
 import type { Empresa, OrdenTrabajo, StockActual } from "@/lib/types";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
 import { Suspense } from "react";
 
 // ── Tipos internos ────────────────────────────────────────────────────────────
+
+type BorradorOT = OrdenTrabajo & {
+  ot_cuarteles: { cuartel: { codigo: string } }[];
+};
 
 type CarenciaInfo = {
   cuartel_codigo: string;
@@ -33,10 +38,13 @@ function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const empresaParam = searchParams.get("empresa") || "";
+  const { isAdmin, isOperador } = useRol();
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [empresaId, setEmpresaId] = useState(empresaParam);
   const [ordenes, setOrdenes] = useState<OrdenTrabajo[]>([]);
+  const [borradores, setBorradores] = useState<BorradorOT[]>([]);
+  const [kpiFinalizadas, setKpiFinalizadas] = useState(0);
   const [stockBajo, setStockBajo] = useState<StockActual[]>([]);
   const [carencias, setCarencias] = useState<CarenciaInfo[]>([]);
   const [costos, setCostos] = useState<{ total: number; porHa: number; top: Costo[] }>({ total: 0, porHa: 0, top: [] });
@@ -58,8 +66,33 @@ function DashboardContent() {
 
   const loadData = async (eid: string) => {
     setLoading(true);
-    await Promise.all([loadOrdenes(eid), loadStock(eid), loadCarencias(eid), loadCostos(eid)]);
+    await Promise.all([
+      loadOrdenes(eid), loadStock(eid), loadCarencias(eid),
+      loadCostos(eid), loadBorradores(eid), loadKpiFinalizadas(eid),
+    ]);
     setLoading(false);
+  };
+
+  const loadBorradores = async (eid: string) => {
+    const { data } = await supabase
+      .from("ordenes_trabajo")
+      .select("*, ot_cuarteles(cuartel:cuarteles(codigo))")
+      .eq("empresa_id", eid)
+      .eq("estado", "borrador")
+      .order("created_at", { ascending: false })
+      .limit(6);
+    setBorradores((data as BorradorOT[]) || []);
+  };
+
+  const loadKpiFinalizadas = async (eid: string) => {
+    const year = new Date().getFullYear();
+    const { count } = await supabase
+      .from("ordenes_trabajo")
+      .select("*", { count: "exact", head: true })
+      .eq("empresa_id", eid)
+      .eq("estado", "finalizada")
+      .gte("fecha_aplicacion", `${year}-01-01`);
+    setKpiFinalizadas(count ?? 0);
   };
 
   const loadOrdenes = async (eid: string) => {
@@ -196,7 +229,7 @@ function DashboardContent() {
   const switchEmpresa = (eid: string) => {
     setEmpresaId(eid);
     router.push(`/dashboard?empresa=${eid}`);
-    loadData(eid);
+    // No llamar loadData aquí — el useEffect lo dispara al cambiar empresaParam
   };
 
   const empresa = empresas.find(e => e.id === empresaId);
@@ -221,7 +254,33 @@ function DashboardContent() {
             <h1 style={pageTitle}>{empresa?.nombre || "—"}</h1>
             <p style={pageSubtitle}>Panel de gestión fitosanitaria</p>
           </div>
-          <Link href={`/ordenes/nueva?empresa=${empresaId}`} style={primaryBtn}>+ Nueva orden</Link>
+          {(isAdmin || isOperador) && (
+            <Link href={`/ordenes/nueva?empresa=${empresaId}`} style={primaryBtn}>+ Nueva orden</Link>
+          )}
+        </div>
+
+        {/* ── KPI bar ── */}
+        <div style={kpiBar}>
+          <div style={kpiCard}>
+            <span style={kpiLabel}>Finalizadas {new Date().getFullYear()}</span>
+            <span style={kpiValue}>{loading ? "—" : kpiFinalizadas}</span>
+          </div>
+          <div style={kpiCard}>
+            <span style={kpiLabel}>OTs activas</span>
+            <span style={kpiValue}>{loading ? "—" : ordenes.length}</span>
+          </div>
+          <div style={{ ...kpiCard, borderColor: borradores.length > 0 ? "#fde68a" : "#e5e7eb", background: borradores.length > 0 ? "#fffbeb" : "#fff" }}>
+            <span style={kpiLabel}>Pendientes aprobación</span>
+            <span style={{ ...kpiValue, color: borradores.length > 0 ? "#d97706" : "#9ca3af" }}>
+              {loading ? "—" : borradores.length}
+            </span>
+          </div>
+          <div style={{ ...kpiCard, borderColor: stockBajo.length > 0 ? "#fca5a5" : "#e5e7eb", background: stockBajo.length > 0 ? "#fef2f2" : "#fff" }}>
+            <span style={kpiLabel}>Bajo stock</span>
+            <span style={{ ...kpiValue, color: stockBajo.length > 0 ? "#dc2626" : "#9ca3af" }}>
+              {loading ? "—" : stockBajo.length}
+            </span>
+          </div>
         </div>
 
         {loading ? (
@@ -270,6 +329,36 @@ function DashboardContent() {
             )}
 
             <div style={grid}>
+              {/* Borradores pendientes de aprobación (admin y operador) */}
+              {(isAdmin || isOperador) && borradores.length > 0 && (
+                <section style={{ ...panel, borderColor: "#fde68a", background: "#fffdf0" }}>
+                  <div style={panelHeader}>
+                    <h2 style={{ ...panelTitle, color: "#92400e" }}>
+                      {isAdmin ? "Borradores por aprobar" : "Mis borradores"}
+                    </h2>
+                    <Link href={`/ordenes?empresa=${empresaId}`} style={linkMore}>Ver todas →</Link>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {borradores.map(ot => (
+                      <Link key={ot.id} href={`/ordenes/${ot.id}?empresa=${empresaId}`} style={{ ...otRow, background: "#fefce8", borderColor: "#fde68a" }}>
+                        <span style={otNum}>OT #{ot.numero}</span>
+                        <span style={{ flex: 1, fontSize: "13px", color: "#374151" }}>
+                          {ot.fecha_solicitud}
+                          {ot.ot_cuarteles?.length > 0 && (
+                            <span style={{ color: "#6b7280", marginLeft: "6px" }}>
+                              — {ot.ot_cuarteles.map(c => c.cuartel?.codigo).filter(Boolean).join(", ")}
+                            </span>
+                          )}
+                        </span>
+                        <span style={{ fontSize: "12px", fontWeight: 700, color: "#92400e", background: "#fef3c7", padding: "2px 8px", borderRadius: "999px", border: "1px solid #fde68a" }}>
+                          {isAdmin ? "Aprobar →" : "Borrador"}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              )}
+
               {/* Órdenes activas */}
               <section style={panel}>
                 <div style={panelHeader}>
@@ -394,6 +483,10 @@ function DashboardContent() {
 // ── Estilos ───────────────────────────────────────────────────────────────────
 
 const container: React.CSSProperties     = { maxWidth: "1300px", margin: "0 auto", padding: "28px 20px" };
+const kpiBar: React.CSSProperties        = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "12px", marginBottom: "24px" };
+const kpiCard: React.CSSProperties       = { background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: "14px", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "6px" };
+const kpiLabel: React.CSSProperties      = { fontSize: "11px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" };
+const kpiValue: React.CSSProperties      = { fontSize: "32px", fontWeight: 800, color: "#1a4731", lineHeight: 1 };
 const empresaBar: React.CSSProperties    = { display: "flex", gap: "8px", marginBottom: "22px", flexWrap: "wrap" };
 const empresaBtn: React.CSSProperties    = { padding: "8px 18px", borderRadius: "999px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: "pointer" };
 const empresaBtnActive: React.CSSProperties = { background: "#1a4731", border: "1.5px solid #1a4731", color: "#fff" };
