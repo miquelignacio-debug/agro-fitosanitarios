@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
+import { useRol } from "@/lib/useRol";
 import type { Empresa, OrdenTrabajo } from "@/lib/types";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
 
@@ -15,6 +16,7 @@ type OTConCuarteles = OrdenTrabajo & {
 function OrdenesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isAdmin, isOperador } = useRol();
   const empresaParam = searchParams.get("empresa") || "";
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
@@ -81,9 +83,11 @@ function OrdenesContent() {
             <h1 style={pageTitle}>Órdenes de Trabajo — {empresa?.nombre}</h1>
             <p style={pageSubtitle}>{ordenes.length} órdenes registradas</p>
           </div>
-          <Link href={`/ordenes/nueva?empresa=${empresaId}`} style={primaryBtn}>
-            + Nueva orden
-          </Link>
+          {(isAdmin || isOperador) && (
+            <Link href={`/ordenes/nueva?empresa=${empresaId}`} style={primaryBtn}>
+              + Nueva orden
+            </Link>
+          )}
         </div>
 
         {/* Filtros de estado */}

@@ -5,6 +5,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
+import { useRol } from "@/lib/useRol";
 import type { OrdenTrabajo } from "@/lib/types";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
 import { generateOTPdf } from "@/lib/generateOTPdf";
@@ -81,6 +82,7 @@ function OTDetalleContent() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const empresaId = searchParams.get("empresa") || "";
+  const { isAdmin, isOperador } = useRol();
 
   const [ot, setOT] = useState<OTCompleta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -392,7 +394,10 @@ function OTDetalleContent() {
   const transiciones   = TRANSICIONES[ot.estado];
   const superficieTotal = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
   const pasoActualIdx  = PASOS_FLUJO.indexOf(ot.estado);
-  const puedeEditar    = ot.estado === "borrador" || ot.estado === "emitida";
+  // otEditable: admin puede editar borrador o emitida; operador solo borrador
+  const otEditable     = isAdmin
+    ? (ot.estado === "borrador" || ot.estado === "emitida")
+    : isOperador && ot.estado === "borrador";
   const estaFinalizada = ot.estado === "finalizada";
   const estaAnulada    = ot.estado === "anulada";
 
@@ -420,17 +425,20 @@ function OTDetalleContent() {
           </div>
 
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-start" }}>
-            {!estaAnulada && (
+            {/* Imprimir: admin/viewer siempre; operador solo desde emitida */}
+            {!estaAnulada && (isAdmin || !isOperador || ot.estado === "emitida" || ot.estado === "finalizada") && (
               <button onClick={() => generateOTPdf(ot as unknown as Parameters<typeof generateOTPdf>[0])} style={printBtn}>
                 Imprimir OT
               </button>
             )}
-            {puedeEditar && (
+            {/* Editar: admin en borrador/emitida; operador solo en borrador */}
+            {otEditable && (
               <button onClick={() => router.push(`/ordenes/${ot.id}/editar${empresaId ? `?empresa=${empresaId}` : ""}`)} style={secondaryBtn}>
                 Editar OT
               </button>
             )}
-            {estaFinalizada && (
+            {/* Reabrir y eliminar: solo admin */}
+            {estaFinalizada && isAdmin && (
               <>
                 <button onClick={handleReabrir} style={secondaryBtn} disabled={transitioning}>
                   {transitioning ? "..." : "Reabrir OT"}
@@ -440,22 +448,29 @@ function OTDetalleContent() {
                 </button>
               </>
             )}
-            {estaAnulada && (
+            {estaAnulada && isAdmin && (
               <button onClick={() => setConfirmEliminar(true)} style={dangerBtn} disabled={transitioning}>
                 Eliminar OT
               </button>
             )}
-            {transiciones.includes("finalizada") && (
+            {/* Finalizar: admin o operador */}
+            {transiciones.includes("finalizada") && (isAdmin || isOperador) && (
               <button onClick={() => setShowEjecucion(true)} style={primaryBtn}>
                 Registrar finalización
               </button>
             )}
-            {transiciones.filter(t => t !== "finalizada").map(t => (
-              <button key={t} onClick={() => handleTransicion(t)}
-                style={t === "anulada" ? dangerBtn : secondaryBtn} disabled={transitioning}>
-                {transitioning ? "..." : (TRANS_LABEL[t] || t)}
-              </button>
-            ))}
+            {/* Otras transiciones con restricciones por rol */}
+            {transiciones.filter(t => t !== "finalizada").map(t => {
+              if (t === "emitida"     && !isAdmin) return null; // aprobar: solo admin
+              if (t === "anulada"     && !isAdmin) return null; // anular: solo admin
+              if (t === "en_ejecucion" && !isAdmin && !isOperador) return null;
+              return (
+                <button key={t} onClick={() => handleTransicion(t)}
+                  style={t === "anulada" ? dangerBtn : secondaryBtn} disabled={transitioning}>
+                  {transitioning ? "..." : (TRANS_LABEL[t] || t)}
+                </button>
+              );
+            })}
           </div>
         </div>
 

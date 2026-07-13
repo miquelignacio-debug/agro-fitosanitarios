@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import type { Usuario } from "@/lib/types";
 
-const ROL_LABELS = { admin: "Administrador", operador: "Operador" };
+const ROL_LABELS: Record<string, string> = { admin: "Administrador", operador: "Operador", visualizador: "Visualizador" };
 
 export default function AdminUsuariosPage() {
   const router = useRouter();
@@ -22,7 +22,7 @@ export default function AdminUsuariosPage() {
   const [fEmail, setFEmail] = useState("");
   const [fPassword, setFPassword] = useState("");
   const [fRut, setFRut] = useState("");
-  const [fRol, setFRol] = useState<"admin" | "operador">("admin");
+  const [fRol, setFRol] = useState<"admin" | "operador" | "visualizador">("admin");
 
   useEffect(() => {
     const init = async () => {
@@ -112,8 +112,8 @@ export default function AdminUsuariosPage() {
                 <div style={{ flex: 1 }}>
                   <div style={cardName}>{u.nombre}</div>
                   {u.rut && <div style={cardSub}>RUT: {u.rut}</div>}
-                  <span style={{ ...rolBadge, ...(u.rol === "admin" ? rolAdmin : rolOperador) }}>
-                    {ROL_LABELS[u.rol]}
+                  <span style={{ ...rolBadge, ...(u.rol === "admin" ? rolAdmin : u.rol === "operador" ? rolOperador : rolVisualizador) }}>
+                    {ROL_LABELS[u.rol] ?? u.rol}
                   </span>
                 </div>
                 <div style={cardActions}>
@@ -153,9 +153,10 @@ export default function AdminUsuariosPage() {
                 </div>
                 <div style={formField}>
                   <label style={labelStyle}>Rol *</label>
-                  <select value={fRol} onChange={(e) => setFRol(e.target.value as "admin" | "operador")} style={inputStyle}>
+                  <select value={fRol} onChange={(e) => setFRol(e.target.value as "admin" | "operador" | "visualizador")} style={inputStyle}>
                     <option value="admin">Administrador</option>
                     <option value="operador">Operador</option>
+                    <option value="visualizador">Visualizador</option>
                   </select>
                 </div>
               </div>
@@ -190,6 +191,7 @@ const cardActions: React.CSSProperties = { display: "flex", gap: "8px", flexShri
 const rolBadge: React.CSSProperties = { padding: "2px 10px", borderRadius: "999px", fontSize: "11px", fontWeight: 700 };
 const rolAdmin: React.CSSProperties = { background: "#dbeafe", color: "#1d4ed8" };
 const rolOperador: React.CSSProperties = { background: "#dcfce7", color: "#15803d" };
+const rolVisualizador: React.CSSProperties = { background: "#fef9c3", color: "#854d0e" };
 const editBtn: React.CSSProperties = { padding: "6px 14px", borderRadius: "8px", border: "1px solid #1a4731", background: "transparent", color: "#1a4731", fontSize: "13px", fontWeight: 700, cursor: "pointer" };
 const deleteBtn: React.CSSProperties = { padding: "6px 14px", borderRadius: "8px", border: "1px solid #fca5a5", background: "transparent", color: "#dc2626", fontSize: "13px", fontWeight: 700, cursor: "pointer" };
 const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 };

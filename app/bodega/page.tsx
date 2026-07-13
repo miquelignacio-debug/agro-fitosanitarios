@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
+import { useRol } from "@/lib/useRol";
 import type { Empresa, StockMovimiento, Producto } from "@/lib/types";
 
 type StockRow = {
@@ -29,10 +30,20 @@ type TransfForm = {
   notas: string;
 };
 
+type SalidaVentaForm = {
+  productoId: string;
+  cantidad: string;
+  tipo: "salida_venta" | "salida_devolucion";
+  guiaDespacho: string;
+  destinatario: string;
+  fecha: string;
+};
+
 function BodegaContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const empresaParam = searchParams.get("empresa") || "";
+  const { isAdmin, isOperador } = useRol();
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [empresaId, setEmpresaId] = useState(empresaParam);
@@ -50,6 +61,15 @@ function BodegaContent() {
   const [transfForm,   setTransfForm]   = useState<TransfForm>({
     origenId: "", productoId: "", cantidad: "", unidad: "lt",
     fecha: new Date().toISOString().slice(0, 10), notas: "",
+  });
+
+  const [showSalidaVenta,   setShowSalidaVenta]   = useState(false);
+  const [salidaVentaSaving, setSalidaVentaSaving] = useState(false);
+  const [salidaVentaError,  setSalidaVentaError]  = useState("");
+  const [salidaVentaPrecio, setSalidaVentaPrecio] = useState<number | null>(null);
+  const [salidaVentaForm,   setSalidaVentaForm]   = useState<SalidaVentaForm>({
+    productoId: "", cantidad: "", tipo: "salida_venta",
+    guiaDespacho: "", destinatario: "", fecha: new Date().toISOString().slice(0, 10),
   });
 
   useEffect(() => {
@@ -178,6 +198,65 @@ function BodegaContent() {
     await load(empresaId);
   };
 
+  const calcPrecioPromedio = async (productoId: string): Promise<number | null> => {
+    const { data } = await supabase
+      .from("stock_movimientos")
+      .select("cantidad, precio_unitario")
+      .eq("empresa_id", empresaId)
+      .eq("producto_id", productoId)
+      .in("tipo", ["entrada", "ajuste_entrada"])
+      .not("precio_unitario", "is", null);
+    if (!data || data.length === 0) return null;
+    const totalCosto = data.reduce((s: number, m: { cantidad: number; precio_unitario: number }) => s + m.cantidad * m.precio_unitario, 0);
+    const totalCant  = data.reduce((s: number, m: { cantidad: number }) => s + m.cantidad, 0);
+    return totalCant > 0 ? totalCosto / totalCant : null;
+  };
+
+  const openSalidaVenta = () => {
+    setSalidaVentaForm({
+      productoId: "", cantidad: "", tipo: "salida_venta",
+      guiaDespacho: "", destinatario: "", fecha: new Date().toISOString().slice(0, 10),
+    });
+    setSalidaVentaPrecio(null);
+    setSalidaVentaError("");
+    setShowSalidaVenta(true);
+  };
+
+  const handleSalidaVenta = async () => {
+    setSalidaVentaError("");
+    const { productoId, cantidad, tipo, guiaDespacho, destinatario, fecha } = salidaVentaForm;
+    if (!productoId)                             { setSalidaVentaError("Selecciona un producto."); return; }
+    if (!cantidad || parseFloat(cantidad) <= 0)  { setSalidaVentaError("Ingresa una cantidad válida."); return; }
+    if (!guiaDespacho.trim())                    { setSalidaVentaError("Ingresa el número de guía de despacho."); return; }
+
+    const stockRow = stock.find(s => s.producto_id === productoId);
+    if (!stockRow || Number(stockRow.cantidad_disponible) < parseFloat(cantidad)) {
+      setSalidaVentaError("Stock insuficiente.");
+      return;
+    }
+
+    const precioPromedio = await calcPrecioPromedio(productoId);
+
+    setSalidaVentaSaving(true);
+    const { error } = await supabase.from("stock_movimientos").insert({
+      empresa_id:      empresaId,
+      producto_id:     productoId,
+      tipo,
+      cantidad:        parseFloat(cantidad),
+      unidad:          stockRow.producto.unidad_bodega || "lt",
+      fecha,
+      documento_tipo:    "guia_despacho",
+      documento_numero:  guiaDespacho.trim(),
+      precio_unitario:   precioPromedio,
+      costo_unitario:    precioPromedio,
+      notas:             destinatario.trim() || null,
+    });
+    setSalidaVentaSaving(false);
+    if (error) { setSalidaVentaError(error.message); return; }
+    setShowSalidaVenta(false);
+    await load(empresaId);
+  };
+
   const tipoLabel: Record<string, string> = {
     entrada: "Entrada",
     salida: "Salida (OT)",
@@ -186,6 +265,8 @@ function BodegaContent() {
     transferencia_entrada: "Transf. entrada",
     ajuste_entrada: "Ajuste +",
     ajuste_salida: "Ajuste −",
+    salida_venta: "Salida venta",
+    salida_devolucion: "Devolución",
   };
 
   const tipoColor: Record<string, string> = {
@@ -196,6 +277,8 @@ function BodegaContent() {
     transferencia_entrada: "#1d4ed8",
     ajuste_entrada: "#0891b2",
     ajuste_salida: "#7c3aed",
+    salida_venta: "#be185d",
+    salida_devolucion: "#0e7490",
   };
 
   return (
@@ -220,20 +303,31 @@ function BodegaContent() {
             <p style={pageSubtitle}>Stock de productos fitosanitarios</p>
           </div>
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-            <Link href={`/bodega/carga-inicial?empresa=${empresaId}`} style={secondaryBtn}>
-              Inventario inicial (plantilla)
-            </Link>
-            <Link href={`/bodega/inventario?empresa=${empresaId}`} style={secondaryBtn}>
-              Toma de inventario
-            </Link>
-            {empresas.length > 1 && (
-              <button onClick={openTransf} style={secondaryBtn}>
-                ⇄ Transferencia
-              </button>
+            {isAdmin && (
+              <>
+                <Link href={`/bodega/carga-inicial?empresa=${empresaId}`} style={secondaryBtn}>
+                  Inventario inicial (plantilla)
+                </Link>
+                <Link href={`/bodega/inventario?empresa=${empresaId}`} style={secondaryBtn}>
+                  Toma de inventario
+                </Link>
+                {empresas.length > 1 && (
+                  <button onClick={openTransf} style={secondaryBtn}>
+                    ⇄ Transferencia
+                  </button>
+                )}
+              </>
             )}
-            <Link href={`/bodega/ingreso?empresa=${empresaId}`} style={primaryBtn}>
-              + Ingreso a bodega
-            </Link>
+            {(isAdmin || isOperador) && (
+              <>
+                <button onClick={openSalidaVenta} style={secondaryBtn}>
+                  Salida venta / devolución
+                </button>
+                <Link href={`/bodega/ingreso?empresa=${empresaId}`} style={primaryBtn}>
+                  + Ingreso a bodega
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
@@ -358,6 +452,112 @@ function BodegaContent() {
                 <button onClick={() => setShowTransf(false)} style={mCancelBtn}>Cancelar</button>
                 <button onClick={handleTransferencia} disabled={transfSaving} style={mSaveBtn}>
                   {transfSaving ? "Registrando..." : "Registrar transferencia"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal salida venta / devolución */}
+        {showSalidaVenta && (
+          <div style={modalOverlay}>
+            <div style={{ ...modalBox, width: "460px" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a4731", marginBottom: "16px" }}>
+                Salida por venta / devolución
+              </h3>
+              <div style={{ display: "grid", gap: "14px" }}>
+                <div>
+                  <label style={lbl}>Tipo</label>
+                  <select
+                    value={salidaVentaForm.tipo}
+                    onChange={e => setSalidaVentaForm(f => ({ ...f, tipo: e.target.value as SalidaVentaForm["tipo"] }))}
+                    style={minp}
+                  >
+                    <option value="salida_venta">Venta</option>
+                    <option value="salida_devolucion">Devolución</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={lbl}>Producto</label>
+                  <select
+                    value={salidaVentaForm.productoId}
+                    onChange={async e => {
+                      const pid = e.target.value;
+                      setSalidaVentaForm(f => ({ ...f, productoId: pid, cantidad: "" }));
+                      setSalidaVentaPrecio(null);
+                      if (pid) {
+                        const precio = await calcPrecioPromedio(pid);
+                        setSalidaVentaPrecio(precio);
+                      }
+                    }}
+                    style={minp}
+                  >
+                    <option value="">— Seleccionar producto —</option>
+                    {stock.filter(s => Number(s.cantidad_disponible) > 0).map(s => (
+                      <option key={s.producto_id} value={s.producto_id}>
+                        {s.producto.nombre_comercial} — {displayStock(Number(s.cantidad_disponible), s.producto.unidad_bodega)} disponibles
+                      </option>
+                    ))}
+                  </select>
+                  {salidaVentaForm.productoId && (
+                    <p style={{ fontSize: "12px", marginTop: "4px", color: salidaVentaPrecio != null ? "#1a4731" : "#d97706" }}>
+                      {salidaVentaPrecio != null
+                        ? `Precio promedio stock: $${salidaVentaPrecio.toLocaleString("es-CL", { maximumFractionDigits: 0 })} / ${stock.find(s => s.producto_id === salidaVentaForm.productoId)?.producto.unidad_bodega || "u"}`
+                        : "Sin precio de costo registrado — se ingresará sin valor monetario."}
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div>
+                    <label style={lbl}>Cantidad</label>
+                    <input
+                      type="number" min="0" step="any"
+                      value={salidaVentaForm.cantidad}
+                      onChange={e => setSalidaVentaForm(f => ({ ...f, cantidad: e.target.value }))}
+                      style={minp} placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label style={lbl}>Fecha</label>
+                    <input
+                      type="date" value={salidaVentaForm.fecha}
+                      onChange={e => setSalidaVentaForm(f => ({ ...f, fecha: e.target.value }))}
+                      style={minp}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={lbl}>N° Guía de despacho</label>
+                  <input
+                    value={salidaVentaForm.guiaDespacho}
+                    onChange={e => setSalidaVentaForm(f => ({ ...f, guiaDespacho: e.target.value }))}
+                    style={minp} placeholder="Ej: 1234"
+                  />
+                </div>
+
+                <div>
+                  <label style={lbl}>Destinatario (opcional)</label>
+                  <input
+                    value={salidaVentaForm.destinatario}
+                    onChange={e => setSalidaVentaForm(f => ({ ...f, destinatario: e.target.value }))}
+                    style={minp} placeholder="Nombre del comprador o receptor"
+                  />
+                </div>
+
+                {salidaVentaError && (
+                  <p style={{ fontSize: "13px", color: "#dc2626", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "8px", padding: "10px 14px", margin: 0 }}>
+                    {salidaVentaError}
+                  </p>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "20px", justifyContent: "flex-end" }}>
+                <button onClick={() => setShowSalidaVenta(false)} style={mCancelBtn}>Cancelar</button>
+                <button onClick={handleSalidaVenta} disabled={salidaVentaSaving} style={mSaveBtn}>
+                  {salidaVentaSaving ? "Registrando..." : "Registrar salida"}
                 </button>
               </div>
             </div>

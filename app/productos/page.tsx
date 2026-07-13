@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
+import { useRol } from "@/lib/useRol";
 import type { Producto } from "@/lib/types";
 
 type EditPrecios = { id: string; nombre: string; precio: string; minimo: string };
 
 export default function ProductosPage() {
   const router = useRouter();
+  const { isAdmin } = useRol();
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -51,6 +53,7 @@ export default function ProductosPage() {
             <h1 style={pageTitle}>Catálogo de productos</h1>
             <p style={pageSubtitle}>{productos.length} productos registrados</p>
           </div>
+          {isAdmin && (
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             <Link href="/productos/importar" style={secondaryBtn}>
               Importar desde SAG
@@ -59,6 +62,7 @@ export default function ProductosPage() {
               + Nuevo producto
             </Link>
           </div>
+          )}
         </div>
 
         <div style={toolbar}>
@@ -157,6 +161,7 @@ export default function ProductosPage() {
                       </span>
                     </td>
                     <td style={td}>
+                      {isAdmin && (
                       <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
                         <Link href={`/productos/${p.id}`} style={editLink}>Editar</Link>
                         <button style={editLink} onClick={() => setEditPrecios({
@@ -167,6 +172,7 @@ export default function ProductosPage() {
                           $ Precio / Mín.
                         </button>
                       </div>
+                      )}
                     </td>
                   </tr>
                 ))}

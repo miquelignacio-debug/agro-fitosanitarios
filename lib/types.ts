@@ -11,7 +11,7 @@ export type Usuario = {
   id: string;
   nombre: string;
   rut: string | null;
-  rol: "admin" | "operador";
+  rol: "admin" | "operador" | "visualizador";
   created_at: string;
 };
 
@@ -85,7 +85,7 @@ export type StockMovimiento = {
   id: string;
   empresa_id: string;
   producto_id: string;
-  tipo: "entrada" | "salida" | "salida_barbecho" | "transferencia_salida" | "transferencia_entrada" | "ajuste_entrada" | "ajuste_salida";
+  tipo: "entrada" | "salida" | "salida_barbecho" | "transferencia_salida" | "transferencia_entrada" | "ajuste_entrada" | "ajuste_salida" | "salida_venta" | "salida_devolucion";
   cantidad: number;
   unidad: string;
   fecha: string;
