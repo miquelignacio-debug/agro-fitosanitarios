@@ -141,8 +141,15 @@ function NuevaOTContent() {
             cantidad = dosis * supTotal;
           }
           if (cantidad <= 0) continue;
+          // Convertir a unidad de bodega (cc→lt, g→kg)
+          const prefix = unit.split("/")[0].toLowerCase();
+          const prodCatalog = productos.find(p => p.id === prod.producto_id);
+          const bodega = prodCatalog?.unidad_bodega ?? null;
+          if (bodega === "lt" && (prefix === "cc" || prefix === "ml")) cantidad /= 1000;
+          else if (bodega === "kg" && prefix === "g") cantidad /= 1000;
+          const unidadDisplay = bodega || prefix;
           const existing = comprMap.get(prod.producto_id) ?? [];
-          existing.push({ ot_numero: ot.numero, cantidad: Math.round(cantidad * 100) / 100, unidad: unit.split("/")[0] });
+          existing.push({ ot_numero: ot.numero, cantidad: Math.round(cantidad * 100) / 100, unidad: unidadDisplay });
           comprMap.set(prod.producto_id, existing);
         }
       }
@@ -152,7 +159,12 @@ function NuevaOTContent() {
   }, [empresa]);
 
   // ── Computed ───────────────────────────────────────────────────────────────
-  const cuartelesPorEmpresa = cuarteles.filter(c => c.empresa_id === empresa);
+  const cuartelesPorEmpresa  = cuarteles.filter(c => c.empresa_id === empresa);
+  const [especieFilter, setEspecieFilter] = useState("");
+  const especiesDisponibles = Array.from(new Set(cuartelesPorEmpresa.map(c => c.especie))).sort();
+  const cuartelesFiltrados  = especieFilter
+    ? cuartelesPorEmpresa.filter(c => c.especie === especieFilter)
+    : cuartelesPorEmpresa;
   const toggleFuncion = (f: string) =>
     setFunciones(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]);
 
@@ -189,14 +201,21 @@ function NuevaOTContent() {
     const supTotal = cuartelesOT.reduce((s, c) => s + (parseFloat(c.superficie_ha) || 0), 0);
     if (!supTotal) return null;
     const mojVal = parseFloat(mojamientoSol) || 0;
+    let cantidad: number;
     if (row.dosis_unidad.includes("/100")) {
       if (!mojVal) return null;
-      return Math.round(dosis * mojVal * supTotal / 100 * 100) / 100;
+      cantidad = dosis * mojVal * supTotal / 100;
+    } else if (row.dosis_unidad.includes("/ha")) {
+      cantidad = dosis * supTotal;
+    } else {
+      return null;
     }
-    if (row.dosis_unidad.includes("/ha")) {
-      return Math.round(dosis * supTotal * 100) / 100;
-    }
-    return null;
+    // Convertir unidades menores a unidad de bodega (cc→lt, g→kg)
+    const prefix = row.dosis_unidad.split("/")[0].toLowerCase();
+    const prod = productos.find(p => p.id === row.producto_id);
+    if (prod?.unidad_bodega === "lt" && (prefix === "cc" || prefix === "ml")) cantidad /= 1000;
+    else if (prod?.unidad_bodega === "kg" && prefix === "g") cantidad /= 1000;
+    return Math.round(cantidad * 100) / 100;
   };
 
   // ── Handlers: cuarteles ──────────────────────────────────────────────────
@@ -518,13 +537,24 @@ function NuevaOTContent() {
           {/* ── Cuarteles ── */}
           <section style={section}>
             <h2 style={sectionTitle}>Cuarteles a tratar</h2>
+            {especiesDisponibles.length > 1 && (
+              <div style={{ ...chipRow, marginBottom: "12px" }}>
+                {especiesDisponibles.map(e => (
+                  <button key={e} type="button"
+                    onClick={() => setEspecieFilter(prev => prev === e ? "" : e)}
+                    style={{ ...chip, ...(especieFilter === e ? chipActive : {}) }}>
+                    {e}
+                  </button>
+                ))}
+              </div>
+            )}
             {cuartelesOT.map((row, i) => (
               <div key={i} style={rowWrap}>
                 <div style={{ flex: 2 }}>
                   <Field label={i === 0 ? "Cuartel" : ""}>
                     <select value={row.cuartel_id} onChange={e => setCuartelRow(i, "cuartel_id", e.target.value)} style={inputStyle}>
                       <option value="">— Seleccionar —</option>
-                      {cuartelesPorEmpresa.map(c => (
+                      {cuartelesFiltrados.map(c => (
                         <option key={c.id} value={c.id}>
                           {c.codigo} — {c.especie} {c.variedad} ({c.superficie_real ?? "?"}ha)
                         </option>
@@ -639,7 +669,7 @@ function NuevaOTContent() {
                   <div style={{ flex: "1 1 110px" }}>
                     <Field label={i === 0 ? "Unidad" : ""}>
                       <select value={row.dosis_unidad} onChange={e => setProductoRow(i, "dosis_unidad", e.target.value)} style={inputStyle}>
-                        {["lt/ha", "kg/ha", "cc/ha", "g/ha", "g/100lt", "cc/100lt"].map(u => (
+                        {["lt/ha", "kg/ha", "cc/ha", "g/ha", "lt/100lt", "kg/100lt", "cc/100lt", "g/100lt"].map(u => (
                           <option key={u} value={u}>{u}</option>
                         ))}
                       </select>

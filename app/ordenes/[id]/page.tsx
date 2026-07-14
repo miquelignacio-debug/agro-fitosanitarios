@@ -58,14 +58,21 @@ const TRANS_LABEL: Record<string, string> = {
   emitida: "Emitir / Aprobar", en_ejecucion: "Iniciar ejecución", finalizada: "Finalizar", anulada: "Anular",
 };
 
-// Consumo de producto para un volumen de agua dado.
-// mojSol = calibración planificada (L/ha) — convierte dosis /ha a base-volumen.
-function calcConsumoFromWater(dosis: number, unidad: string, mojSol: number, aguaLt: number): number {
+// Consumo de producto para un volumen de agua dado, expresado en la unidad de bodega.
+// cc/100lt → lt (/1000), g/100lt → kg (/1000). lt y kg pasan directamente.
+function calcConsumoFromWater(
+  dosis: number, unidad: string, mojSol: number, aguaLt: number,
+  bodegaUnidad?: "lt" | "kg" | null,
+): number {
   if (aguaLt <= 0) return 0;
-  const r = (n: number) => Math.round(n * 1000) / 1000;
-  if (unidad.includes("/100")) return r(dosis * aguaLt / 100);
-  if (unidad.includes("/ha") && mojSol > 0) return r(dosis * aguaLt / mojSol);
-  return 0;
+  let cantidad = 0;
+  if (unidad.includes("/100")) cantidad = dosis * aguaLt / 100;
+  else if (unidad.includes("/ha") && mojSol > 0) cantidad = dosis * aguaLt / mojSol;
+  else return 0;
+  const prefix = unidad.split("/")[0].toLowerCase();
+  if (bodegaUnidad === "lt" && (prefix === "cc" || prefix === "ml")) cantidad /= 1000;
+  else if (bodegaUnidad === "kg" && prefix === "g") cantidad /= 1000;
+  return Math.round(cantidad * 1000) / 1000;
 }
 
 // Dosis por maquinada usando la calibración planificada (mojSol)
@@ -191,12 +198,13 @@ function OTDetalleContent() {
     // Capacidad del primer pulverizador con datos (para dosis_por_maquinada)
     const capacidadLt = ot.ot_aplicadores.find(ap => ap.pulverizador?.capacidad_lt)?.pulverizador?.capacidad_lt ?? 0;
 
-    // Calcular consumos por producto
+    // Calcular consumos por producto (resultado en unidad de bodega)
     const consumos = ot.ot_productos.map(p => {
-      const consumoCampo    = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaCampoLt);
-      const consumoBarbecho = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaBarbechoLt);
+      const bodega          = p.producto.unidad_bodega;
+      const consumoCampo    = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaCampoLt, bodega);
+      const consumoBarbecho = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaBarbechoLt, bodega);
       const dosisMaq        = calcDosisMaq(p.dosis_real, p.dosis_unidad, mojSol, capacidadLt);
-      const unidadStock     = p.producto.unidad_bodega || p.dosis_unidad.split("/")[0] || "lt";
+      const unidadStock     = bodega || "lt";
       return { p, consumoCampo, consumoBarbecho, dosisMaq, unidadStock };
     });
 
@@ -334,6 +342,20 @@ function OTDetalleContent() {
       )
     );
 
+    setTransitioning(false);
+    await load();
+  };
+
+  // ── Guardar mojamiento real sin finalizar (operador en campo) ────────────
+  const handleGuardarMojReal = async () => {
+    if (!ot) return;
+    const mojReal = parseFloat(mojamientoReal);
+    if (!mojReal) return;
+    setTransitioning(true);
+    const { error } = await supabase.from("ordenes_trabajo")
+      .update({ mojamiento_real_ltha: mojReal, updated_at: new Date().toISOString() })
+      .eq("id", ot.id);
+    if (error) { setTransError(`Error al guardar: ${error.message}`); }
     setTransitioning(false);
     await load();
   };
@@ -546,14 +568,43 @@ function OTDetalleContent() {
             </div>
 
             <div style={card}>
-              <h3 style={cardTitle}>Cuarteles ({superficieTotal.toFixed(2)} ha total)</h3>
-              {ot.ot_cuarteles.map(c => (
-                <div key={c.id} style={tableRow}>
-                  <span style={{ fontWeight: 600 }}>{c.cuartel.codigo}</span>
-                  <span style={{ color: "#6b7280", fontSize: "13px" }}>{c.cuartel.especie} {c.cuartel.variedad}</span>
-                  <span style={{ marginLeft: "auto", fontSize: "13px", fontWeight: 600 }}>{c.superficie_ha} ha</span>
-                </div>
-              ))}
+              {(() => {
+                const pulvCap = ot.ot_aplicadores[0]?.pulverizador?.capacidad_lt ?? null;
+                const mojSolC = ot.mojamiento_solicitado_ltha;
+                const conMaqC = !!(pulvCap && mojSolC);
+                return (
+                  <>
+                    <h3 style={cardTitle}>
+                      Cuarteles — {superficieTotal.toFixed(2)} ha total
+                      {conMaqC && ` · ${Math.ceil(superficieTotal * mojSolC! / pulvCap!)} maquinadas totales`}
+                    </h3>
+                    {ot.ot_cuarteles.map(c => {
+                      const maqC = conMaqC ? Math.ceil(c.superficie_ha * mojSolC! / pulvCap!) : null;
+                      return (
+                        <div key={c.id} style={tableRow}>
+                          <span style={{ fontWeight: 600 }}>{c.cuartel.codigo}</span>
+                          <span style={{ color: "#6b7280", fontSize: "13px" }}>{c.cuartel.especie} {c.cuartel.variedad}</span>
+                          <span style={{ marginLeft: "auto", fontSize: "13px", fontWeight: 600 }}>{c.superficie_ha} ha</span>
+                          {maqC != null && (
+                            <span style={{ fontSize: "12px", fontWeight: 700, color: "#1a4731", background: "#f0fdf4", padding: "2px 8px", borderRadius: "6px", marginLeft: "6px" }}>
+                              {maqC} maq.
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {conMaqC && ot.ot_cuarteles.length > 1 && (
+                      <div style={{ ...tableRow, borderTop: "2px solid #d1fae5", marginTop: "4px", paddingTop: "8px" }}>
+                        <span style={{ fontWeight: 800, fontSize: "13px" }}>TOTAL</span>
+                        <span style={{ marginLeft: "auto", fontWeight: 800, fontSize: "13px" }}>{superficieTotal.toFixed(2)} ha</span>
+                        <span style={{ fontSize: "13px", fontWeight: 800, color: "#1a4731", background: "#f0fdf4", padding: "2px 8px", borderRadius: "6px", marginLeft: "6px" }}>
+                          {Math.ceil(superficieTotal * mojSolC! / pulvCap!)} maq.
+                        </span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {ot.ot_aplicadores.length > 0 && (
@@ -590,18 +641,38 @@ function OTDetalleContent() {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {(ot.mojamiento_solicitado_ltha || ot.mojamiento_real_ltha) && (
-              <div style={card}>
-                <h3 style={cardTitle}>Mojamiento</h3>
-                {ot.mojamiento_solicitado_ltha != null && <Row label="Solicitado" value={`${ot.mojamiento_solicitado_ltha} lt/ha`} />}
-                {ot.mojamiento_real_ltha       != null && <Row label="Real"       value={`${ot.mojamiento_real_ltha} lt/ha`} />}
-              </div>
-            )}
+            <div style={card}>
+              <h3 style={cardTitle}>Mojamiento</h3>
+              {ot.mojamiento_solicitado_ltha != null
+                ? <Row label="Solicitado" value={`${ot.mojamiento_solicitado_ltha} lt/ha`} />
+                : <Row label="Solicitado" value="— (no especificado)" />}
+              {ot.mojamiento_real_ltha != null && <Row label="Real" value={`${ot.mojamiento_real_ltha} lt/ha`} />}
+              {/* Campo editable para que el operador declare el mojamiento real antes de finalizar */}
+              {ot.estado === "en_ejecucion" && (isAdmin || isOperador) && (
+                <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #f3f4f6" }}>
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#374151", display: "block", marginBottom: "5px" }}>
+                    {ot.mojamiento_real_ltha != null ? "Actualizar mojamiento real (lt/ha)" : "Declarar mojamiento real (lt/ha)"}
+                  </label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <input
+                      type="number" min="0" step="1"
+                      value={mojamientoReal}
+                      onChange={e => setMojamientoReal(e.target.value)}
+                      style={inputStyle}
+                      placeholder="Ej. 650"
+                    />
+                    <button onClick={handleGuardarMojReal} style={primaryBtn} disabled={transitioning || !mojamientoReal}>
+                      {transitioning ? "..." : "Guardar"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div style={card}>
               <h3 style={cardTitle}>Productos a aplicar</h3>
               {ot.ot_productos.map(p => {
-                const unidadDisplay = p.producto.unidad_dosis || p.dosis_unidad.split("/")[0];
+                const unidadDisplay = p.producto.unidad_bodega || p.dosis_unidad.split("/")[0];
                 return (
                   <div key={p.id} style={{ ...tableRow, flexDirection: "column", alignItems: "flex-start", gap: "4px" }}>
                     <div style={{ fontWeight: 700 }}>{p.producto.nombre_comercial}</div>
@@ -721,9 +792,10 @@ function OTDetalleContent() {
                       <div style={{ borderTop: "1px solid #bbf7d0", marginTop: "4px", paddingTop: "4px" }}>
                         <span style={{ color: "#374151", fontWeight: 700 }}>Consumo estimado por producto:</span>
                         {ot.ot_productos.map(p => {
-                          const cc = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSolVal, aguaCampo);
-                          const cb = remanenteLtV > 0 ? calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSolVal, remanenteLtV) : 0;
-                          const u  = p.producto.unidad_bodega || p.dosis_unidad.split("/")[0] || "lt";
+                          const bodega = p.producto.unidad_bodega;
+                          const cc = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSolVal, aguaCampo, bodega);
+                          const cb = remanenteLtV > 0 ? calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSolVal, remanenteLtV, bodega) : 0;
+                          const u  = bodega || "lt";
                           const total = cc + cb;
                           return (
                             <div key={p.id} style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>

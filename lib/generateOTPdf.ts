@@ -56,7 +56,7 @@ function maquinadasDetalle(supTotal: number, mojamiento: number | null, capacida
   return `${completas} maq. completa${completas !== 1 ? "s" : ""} + saldo ${saldo} lt`;
 }
 
-// Dosis por maquinada completa y saldo
+// Dosis por maquinada completa y saldo (resultado en unidad de dosis, sin conversión)
 function dosisPorMaquinada(
   dosis: number, unidad: string,
   capacidad: number, litrosSaldo: number, mojamiento: number
@@ -72,6 +72,11 @@ function dosisPorMaquinada(
     dosisMaq:   dosis * (capacidad / 100),
     dosisSaldo: litrosSaldo > 0 ? dosis * (litrosSaldo / 100) : null,
   };
+}
+
+// Extrae solo el prefijo de unidad: "cc/100lt" → "cc", "lt/ha" → "lt"
+function prefixUnidad(unidad: string | null | undefined): string {
+  return unidad?.split("/")[0] || "lt";
 }
 
 export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
@@ -145,16 +150,29 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
   doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(26, 71, 49);
   doc.text("CUARTELES A TRATAR", ML, Y); Y += 2;
 
-  const supTotal = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
+  const supTotal  = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
+  const moj       = ot.mojamiento_solicitado_ltha;
+  const capacidad = ot.ot_aplicadores[0]?.pulverizador?.capacidad_lt ?? null;
+  const conMaq    = !!(capacidad && moj);
+
   autoTable(doc, {
     startY: Y, margin: { left: ML, right: 14 },
-    head: [["Cuartel", "Especie", "Variedad", "Patrón", "Superficie (ha)"]],
-    body: ot.ot_cuarteles.map(c => [
-      c.cuartel.codigo, c.cuartel.especie, c.cuartel.variedad, c.cuartel.patron ?? "—", c.superficie_ha.toFixed(2),
-    ]).concat([["", "", "", "TOTAL", supTotal.toFixed(2)]]),
+    head: [conMaq
+      ? ["Cuartel", "Especie", "Variedad", "Patrón", "Sup. (ha)", "Maquinadas"]
+      : ["Cuartel", "Especie", "Variedad", "Patrón", "Superficie (ha)"]],
+    body: ot.ot_cuarteles.map(c => {
+      const maqC = conMaq ? String(Math.ceil(c.superficie_ha * moj! / capacidad!)) : null;
+      const base = [c.cuartel.codigo, c.cuartel.especie, c.cuartel.variedad, c.cuartel.patron ?? "—", c.superficie_ha.toFixed(2)];
+      return conMaq ? [...base, maqC!] : base;
+    }).concat([(() => {
+      const base = ["", "", "", "TOTAL", supTotal.toFixed(2)];
+      return conMaq ? [...base, String(Math.ceil(supTotal * moj! / capacidad!))] : base;
+    })()]),
     headStyles: { fillColor: [26, 71, 49], textColor: 255, fontSize: 8, fontStyle: "bold" },
     bodyStyles: { fontSize: 8 },
-    columnStyles: { 4: { halign: "right", fontStyle: "bold" } },
+    columnStyles: conMaq
+      ? { 4: { halign: "right" }, 5: { halign: "center", fontStyle: "bold", textColor: [26, 71, 49] } }
+      : { 4: { halign: "right", fontStyle: "bold" } },
     alternateRowStyles: { fillColor: [240, 248, 244] },
     styles: { cellPadding: 2 },
     didParseCell: (data) => {
@@ -170,7 +188,6 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
   doc.setFontSize(8); doc.setFont("helvetica", "bold"); doc.setTextColor(26, 71, 49);
   doc.text("APLICADORES", ML, Y); Y += 2;
 
-  const moj = ot.mojamiento_solicitado_ltha;
   autoTable(doc, {
     startY: Y, margin: { left: ML, right: 14 },
     head: [["Operador", "Tractor", "Implemento (capacidad)", "Maquinadas"]],
@@ -211,7 +228,7 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
     head: [["N°", "Producto", "Ingrediente activo", "Dosis real", "Consumo total", "Carencia\n(días)", "Reingreso\n(horas)", "Fecha viable\ncosecha"]],
     body: ot.ot_productos.map((p, i) => {
       const unidad = p.dosis_unidad;
-      const unidadDisplay = p.producto.unidad_dosis || unidad.split("/")[0] || "lt";
+      const unidadDisplay = prefixUnidad(p.producto.unidad_dosis) || prefixUnidad(unidad);
       return [
         String(i + 1),
         p.producto.nombre_comercial,
@@ -244,7 +261,6 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
   Y = lastY() + 4;
 
   // ── DOSIS POR MAQUINADA ───────────────────────────────────────────────────
-  const capacidad = ot.ot_aplicadores[0]?.pulverizador?.capacidad_lt ?? null;
   if (capacidad && moj && supTotal) {
     const litrosTotales = supTotal * moj;
     const maqCompletas  = Math.floor(litrosTotales / capacidad);
@@ -270,7 +286,7 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
       head: [heads],
       body: ot.ot_productos.map((p, i) => {
         const { dosisMaq, dosisSaldo } = dosisPorMaquinada(p.dosis_real, p.dosis_unidad, capacidad, litrosSaldo, moj!);
-        const unit = (p.producto.unidad_dosis || p.dosis_unidad.split("/")[0] || "lt");
+        const unit = prefixUnidad(p.producto.unidad_dosis) || prefixUnidad(p.dosis_unidad);
         const row = [
           String(i + 1),
           p.producto.nombre_comercial,
