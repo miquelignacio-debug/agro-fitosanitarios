@@ -579,29 +579,41 @@ function OTDetalleContent() {
                       {conMaqC && ` · ${Math.ceil(superficieTotal * mojSolC! / pulvCap!)} maquinadas totales`}
                     </h3>
                     {ot.ot_cuarteles.map(c => {
-                      const maqC = conMaqC ? Math.ceil(c.superficie_ha * mojSolC! / pulvCap!) : null;
+                      let maqStr: string | null = null;
+                      if (conMaqC) {
+                        const lt = c.superficie_ha * mojSolC!;
+                        const comp = Math.floor(lt / pulvCap!);
+                        const saldo = Math.round(lt - comp * pulvCap!);
+                        maqStr = saldo < 1 ? `${comp} maq.` : `${comp} + ${saldo} lt`;
+                      }
                       return (
                         <div key={c.id} style={tableRow}>
                           <span style={{ fontWeight: 600 }}>{c.cuartel.codigo}</span>
                           <span style={{ color: "#6b7280", fontSize: "13px" }}>{c.cuartel.especie} {c.cuartel.variedad}</span>
                           <span style={{ marginLeft: "auto", fontSize: "13px", fontWeight: 600 }}>{c.superficie_ha} ha</span>
-                          {maqC != null && (
-                            <span style={{ fontSize: "12px", fontWeight: 700, color: "#1a4731", background: "#f0fdf4", padding: "2px 8px", borderRadius: "6px", marginLeft: "6px" }}>
-                              {maqC} maq.
+                          {maqStr && (
+                            <span style={{ fontSize: "12px", fontWeight: 700, color: "#1a4731", background: "#f0fdf4", padding: "2px 8px", borderRadius: "6px", marginLeft: "6px", whiteSpace: "nowrap" }}>
+                              {maqStr}
                             </span>
                           )}
                         </div>
                       );
                     })}
-                    {conMaqC && ot.ot_cuarteles.length > 1 && (
-                      <div style={{ ...tableRow, borderTop: "2px solid #d1fae5", marginTop: "4px", paddingTop: "8px" }}>
-                        <span style={{ fontWeight: 800, fontSize: "13px" }}>TOTAL</span>
-                        <span style={{ marginLeft: "auto", fontWeight: 800, fontSize: "13px" }}>{superficieTotal.toFixed(2)} ha</span>
-                        <span style={{ fontSize: "13px", fontWeight: 800, color: "#1a4731", background: "#f0fdf4", padding: "2px 8px", borderRadius: "6px", marginLeft: "6px" }}>
-                          {Math.ceil(superficieTotal * mojSolC! / pulvCap!)} maq.
-                        </span>
-                      </div>
-                    )}
+                    {conMaqC && ot.ot_cuarteles.length > 1 && (() => {
+                      const lt = superficieTotal * mojSolC!;
+                      const comp = Math.floor(lt / pulvCap!);
+                      const saldo = Math.round(lt - comp * pulvCap!);
+                      const totalStr = saldo < 1 ? `${comp} maq.` : `${comp} + ${saldo} lt`;
+                      return (
+                        <div style={{ ...tableRow, borderTop: "2px solid #d1fae5", marginTop: "4px", paddingTop: "8px" }}>
+                          <span style={{ fontWeight: 800, fontSize: "13px" }}>TOTAL</span>
+                          <span style={{ marginLeft: "auto", fontWeight: 800, fontSize: "13px" }}>{superficieTotal.toFixed(2)} ha</span>
+                          <span style={{ fontSize: "13px", fontWeight: 800, color: "#1a4731", background: "#f0fdf4", padding: "2px 8px", borderRadius: "6px", marginLeft: "6px", whiteSpace: "nowrap" }}>
+                            {totalStr}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </>
                 );
               })()}

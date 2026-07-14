@@ -46,7 +46,7 @@ function fmtNum(n: number): string {
   return n < 10 ? n.toFixed(2) : n.toFixed(1);
 }
 
-// Detalle de maquinadas: "3 maquinadas" o "3 maq. completas + saldo 750 lt"
+// Detalle de maquinadas para tabla de aplicadores: "3 maq. completas + saldo 750 lt"
 function maquinadasDetalle(supTotal: number, mojamiento: number | null, capacidad: number | null): string | null {
   if (!mojamiento || !capacidad || !supTotal) return null;
   const litrosTotales = supTotal * mojamiento;
@@ -54,6 +54,15 @@ function maquinadasDetalle(supTotal: number, mojamiento: number | null, capacida
   const saldo = Math.round(litrosTotales - completas * capacidad);
   if (saldo < 1) return `${completas} maquinada${completas !== 1 ? "s" : ""}`;
   return `${completas} maq. completa${completas !== 1 ? "s" : ""} + saldo ${saldo} lt`;
+}
+
+// Formato corto para tabla de cuarteles: "2 + 400 lt" o "3"
+function maqCuartelStr(supHa: number, mojLtha: number, capacidadLt: number): string {
+  const litros   = supHa * mojLtha;
+  const completas = Math.floor(litros / capacidadLt);
+  const saldo     = Math.round(litros - completas * capacidadLt);
+  if (saldo < 1) return `${completas}`;
+  return `${completas} + ${saldo} lt`;
 }
 
 // Dosis por maquinada completa y saldo (resultado en unidad de dosis, sin conversión)
@@ -158,20 +167,24 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
   autoTable(doc, {
     startY: Y, margin: { left: ML, right: 14 },
     head: [conMaq
-      ? ["Cuartel", "Especie", "Variedad", "Patrón", "Sup. (ha)", "Maquinadas"]
+      ? ["Cuartel", "Especie", "Variedad", "Patrón", "Sup. (ha)", "Maquinadas", "Moj. real (lt/ha)"]
       : ["Cuartel", "Especie", "Variedad", "Patrón", "Superficie (ha)"]],
     body: ot.ot_cuarteles.map(c => {
-      const maqC = conMaq ? String(Math.ceil(c.superficie_ha * moj! / capacidad!)) : null;
+      const maqC = conMaq ? maqCuartelStr(c.superficie_ha, moj!, capacidad!) : null;
       const base = [c.cuartel.codigo, c.cuartel.especie, c.cuartel.variedad, c.cuartel.patron ?? "—", c.superficie_ha.toFixed(2)];
-      return conMaq ? [...base, maqC!] : base;
+      return conMaq ? [...base, maqC!, ""] : base;
     }).concat([(() => {
       const base = ["", "", "", "TOTAL", supTotal.toFixed(2)];
-      return conMaq ? [...base, String(Math.ceil(supTotal * moj! / capacidad!))] : base;
+      return conMaq ? [...base, maqCuartelStr(supTotal, moj!, capacidad!), ""] : base;
     })()]),
     headStyles: { fillColor: [26, 71, 49], textColor: 255, fontSize: 8, fontStyle: "bold" },
     bodyStyles: { fontSize: 8 },
     columnStyles: conMaq
-      ? { 4: { halign: "right" }, 5: { halign: "center", fontStyle: "bold", textColor: [26, 71, 49] } }
+      ? {
+          4: { halign: "right" },
+          5: { halign: "center", fontStyle: "bold", textColor: [26, 71, 49] },
+          6: { halign: "center", cellWidth: 28 },
+        }
       : { 4: { halign: "right", fontStyle: "bold" } },
     alternateRowStyles: { fillColor: [240, 248, 244] },
     styles: { cellPadding: 2 },
