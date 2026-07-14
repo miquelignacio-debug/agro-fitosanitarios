@@ -208,15 +208,13 @@ function CuadernoContent() {
   const cuarteles = useMemo(() => [...new Set(filas.map(f => f.cuartel))].sort(), [filas]);
   const productos = useMemo(() => [...new Set(filas.map(f => f.producto))].sort(), [filas]);
 
-  // Filas filtradas
+  // Filas filtradas (desde/hasta ya vienen filtradas del servidor)
   const filtered = useMemo(() => filas.filter(f => {
     if (soloFinalizadas && f.estado !== "finalizada") return false;
-    if (desde && f.fecha < desde) return false;
-    if (hasta && f.fecha > hasta) return false;
     if (filtroCuartel && f.cuartel !== filtroCuartel) return false;
     if (filtroProducto && f.producto !== filtroProducto) return false;
     return true;
-  }), [filas, desde, hasta, filtroCuartel, filtroProducto, soloFinalizadas]);
+  }), [filas, filtroCuartel, filtroProducto, soloFinalizadas]);
 
   // ── Excel export ──────────────────────────────────────────────────────────
   const exportar = async () => {

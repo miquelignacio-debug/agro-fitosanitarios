@@ -53,7 +53,7 @@ function OrdenesContent() {
   const switchEmpresa = (eid: string) => {
     setEmpresaId(eid);
     router.push(`/ordenes?empresa=${eid}`);
-    load(eid);
+    // No llamar load() aquí — el useEffect lo dispara al cambiar empresaParam
   };
 
   const filtered = filtroEstado === "todos"

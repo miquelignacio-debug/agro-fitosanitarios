@@ -7,10 +7,16 @@ import Nav from "@/lib/nav";
 import type { Empresa, Cuartel, Maquinaria, Producto, Personal } from "@/lib/types";
 import { FUNCIONES_FITOSANITARIAS } from "@/lib/types";
 
-type CuartelRow   = { cuartel_id: string; superficie_ha: string };
-type AplicadorRow = { personal_id: string; tractor_id: string; pulverizador_id: string; cantidad_maquinadas: string };
-type ProductoRow  = { producto_id: string; dosis_real: string; dosis_unidad: string; carencia_dias: string; rei_horas: string; consumo_total: string };
-type CatalogPlaga = { id: string; nombre: string; tipo: string; activo: boolean };
+type CuartelRow       = { cuartel_id: string; superficie_ha: string };
+type AplicadorRow     = { personal_id: string; tractor_id: string; pulverizador_id: string; cantidad_maquinadas: string };
+type ProductoRow      = { producto_id: string; dosis_real: string; dosis_unidad: string; carencia_dias: string; rei_horas: string; consumo_total: string };
+type CatalogPlaga     = { id: string; nombre: string; tipo: string; activo: boolean };
+type ComprometidoInfo = { ot_numero: number; cantidad: number; unidad: string };
+type OTActiva         = {
+  id: string; numero: number; mojamiento_solicitado_ltha: number | null;
+  ot_cuarteles: { superficie_ha: number }[];
+  ot_productos: { producto_id: string; dosis_real: number | null; dosis_unidad: string | null }[];
+};
 
 import { Suspense } from "react";
 function NuevaOTContent() {
@@ -30,7 +36,9 @@ function NuevaOTContent() {
   const [productos,     setProductos]     = useState<Producto[]>([]);
   const [personal,      setPersonal]      = useState<Personal[]>([]);
   const [catalogPlagas, setCatalogPlagas] = useState<CatalogPlaga[]>([]);
-  const [stockProductoIds, setStockProductoIds] = useState<Set<string>>(new Set());
+  const [stockProductoIds,  setStockProductoIds]  = useState<Set<string>>(new Set());
+  const [stockDisponible,   setStockDisponible]   = useState<Map<string, number>>(new Map());
+  const [stockComprometido, setStockComprometido] = useState<Map<string, ComprometidoInfo[]>>(new Map());
 
   // Cabecera
   const [empresa,           setEmpresa]           = useState(empresaId);
@@ -86,16 +94,61 @@ function NuevaOTContent() {
     init();
   }, []);
 
-  // ── Stock disponible por empresa ───────────────────────────────────────────
+  // ── Stock disponible + comprometido en OTs activas ────────────────────────
   useEffect(() => {
-    if (!empresa) { setStockProductoIds(new Set()); return; }
+    let cancelled = false;
+    if (!empresa) {
+      setStockProductoIds(new Set());
+      setStockDisponible(new Map());
+      setStockComprometido(new Map());
+      return;
+    }
     setStockProductoIds(new Set());
-    supabase.from("stock_actual")
-      .select("producto_id")
-      .eq("empresa_id", empresa)
-      .then(({ data }) => {
-        setStockProductoIds(new Set(((data || []) as { producto_id: string }[]).map(r => r.producto_id)));
-      });
+    setStockDisponible(new Map());
+    setStockComprometido(new Map());
+
+    Promise.all([
+      supabase.from("stock_actual")
+        .select("producto_id, cantidad_disponible")
+        .eq("empresa_id", empresa),
+      supabase.from("ordenes_trabajo")
+        .select("id, numero, mojamiento_solicitado_ltha, ot_cuarteles(superficie_ha), ot_productos(producto_id, dosis_real, dosis_unidad)")
+        .eq("empresa_id", empresa)
+        .in("estado", ["emitida", "en_ejecucion"]),
+    ]).then(([{ data: stockData }, { data: otsData }]) => {
+      if (cancelled) return;
+      const ids = new Set<string>();
+      const stockMap = new Map<string, number>();
+      for (const s of ((stockData || []) as { producto_id: string; cantidad_disponible: number }[])) {
+        ids.add(s.producto_id);
+        stockMap.set(s.producto_id, s.cantidad_disponible);
+      }
+      setStockProductoIds(ids);
+      setStockDisponible(stockMap);
+
+      const comprMap = new Map<string, ComprometidoInfo[]>();
+      for (const ot of ((otsData || []) as OTActiva[])) {
+        const supTotal = (ot.ot_cuarteles || []).reduce((s, c) => s + (c.superficie_ha || 0), 0);
+        const moj = ot.mojamiento_solicitado_ltha ?? 0;
+        for (const prod of (ot.ot_productos || [])) {
+          if (!prod.producto_id || !prod.dosis_real) continue;
+          const dosis = prod.dosis_real;
+          const unit = prod.dosis_unidad ?? "";
+          let cantidad = 0;
+          if (unit.includes("/100") && moj > 0) {
+            cantidad = dosis * moj * supTotal / 100;
+          } else if (unit.includes("/ha")) {
+            cantidad = dosis * supTotal;
+          }
+          if (cantidad <= 0) continue;
+          const existing = comprMap.get(prod.producto_id) ?? [];
+          existing.push({ ot_numero: ot.numero, cantidad: Math.round(cantidad * 100) / 100, unidad: unit.split("/")[0] });
+          comprMap.set(prod.producto_id, existing);
+        }
+      }
+      setStockComprometido(comprMap);
+    });
+    return () => { cancelled = true; };
   }, [empresa]);
 
   // ── Computed ───────────────────────────────────────────────────────────────
@@ -119,6 +172,32 @@ function NuevaOTContent() {
     }
     return list;
   })();
+
+  // ── Stock efectivo disponible por producto ─────────────────────────────────
+  const getStockEfectivo = (productoId: string) => {
+    const actual = stockDisponible.get(productoId);
+    if (actual === undefined) return null;
+    const compr = stockComprometido.get(productoId) ?? [];
+    const totalCompr = compr.reduce((s, c) => s + c.cantidad, 0);
+    const prod = productos.find(p => p.id === productoId);
+    return { actual, compr, totalCompr, saldo: actual - totalCompr, unidad: prod?.unidad_bodega ?? "" };
+  };
+
+  const estimarConsumo = (row: ProductoRow): number | null => {
+    const dosis = parseFloat(row.dosis_real);
+    if (!dosis) return null;
+    const supTotal = cuartelesOT.reduce((s, c) => s + (parseFloat(c.superficie_ha) || 0), 0);
+    if (!supTotal) return null;
+    const mojVal = parseFloat(mojamientoSol) || 0;
+    if (row.dosis_unidad.includes("/100")) {
+      if (!mojVal) return null;
+      return Math.round(dosis * mojVal * supTotal / 100 * 100) / 100;
+    }
+    if (row.dosis_unidad.includes("/ha")) {
+      return Math.round(dosis * supTotal * 100) / 100;
+    }
+    return null;
+  };
 
   // ── Handlers: cuarteles ──────────────────────────────────────────────────
   const setCuartelRow = (i: number, field: keyof CuartelRow, val: string) =>
@@ -298,7 +377,7 @@ function NuevaOTContent() {
       cantidad_maquinadas: aplicadorOT.cantidad_maquinadas ? parseFloat(aplicadorOT.cantidad_maquinadas) : null,
     } : null;
 
-    await Promise.all([
+    const subResults = await Promise.all([
       supabase.from("ot_cuarteles").insert(
         cuartelesOT.filter(c => c.cuartel_id).map(c => ({
           ot_id: otId, cuartel_id: c.cuartel_id, superficie_ha: parseFloat(c.superficie_ha) || 0,
@@ -307,6 +386,12 @@ function NuevaOTContent() {
       supabase.from("ot_productos").insert(productosRows),
       ...(aplicadorRow ? [supabase.from("ot_aplicadores").insert(aplicadorRow)] : []),
     ]);
+    const subError = subResults.find(r => r.error);
+    if (subError) {
+      setError("Error guardando detalles de la OT: " + subError.error!.message);
+      setSaving(false);
+      return;
+    }
 
     setSaving(false);
     router.push(`/ordenes/${otId}${empresa ? `?empresa=${empresa}` : ""}`);
@@ -580,6 +665,36 @@ function NuevaOTContent() {
                       ))}
                     </div>
                   )}
+                  {row.producto_id && (() => {
+                    const si = getStockEfectivo(row.producto_id);
+                    if (!si) return null;
+                    const consumo = estimarConsumo(row);
+                    const excede = consumo !== null && consumo > si.saldo;
+                    const fmt = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(2);
+                    return (
+                      <div style={{ flex: "0 0 100%", paddingLeft: "2px", display: "flex", flexDirection: "column", gap: "3px" }}>
+                        <div style={{ display: "flex", gap: "14px", flexWrap: "wrap", alignItems: "center" }}>
+                          <span style={{ fontSize: "11px", color: "#374151" }}>
+                            Stock bodega: <strong>{fmt(si.actual)} {si.unidad}</strong>
+                          </span>
+                          {si.compr.length > 0 && (
+                            <span style={{ fontSize: "11px", color: "#92400e" }}>
+                              Comprometido: <strong>{fmt(si.totalCompr)} {si.unidad}</strong>
+                              {" "}({si.compr.map(c => `OT #${c.ot_numero}`).join(", ")})
+                            </span>
+                          )}
+                          <span style={{ fontSize: "11px", fontWeight: 700, color: si.saldo <= 0 ? "#dc2626" : "#15803d" }}>
+                            Disponible: {fmt(si.saldo)} {si.unidad}
+                          </span>
+                        </div>
+                        {excede && consumo !== null && (
+                          <span style={{ fontSize: "11px", color: "#dc2626", fontWeight: 700 }}>
+                            ⚠️ Consumo estimado ({fmt(consumo)} {si.unidad}) supera el disponible
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {productosOT.length > 1 && (
                     <button onClick={() => removeProducto(i)} style={removeBtn} type="button">✕</button>
                   )}

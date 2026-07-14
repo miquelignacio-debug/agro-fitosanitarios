@@ -1,19 +1,21 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { supabase } from "./supabaseClient";
 import { useRouter } from "next/navigation";
+import { useRol } from "./useRol";
 
 const NAV_LINKS = [
-  { href: "/dashboard",  label: "Inicio" },
-  { href: "/ordenes",    label: "Órdenes" },
-  { href: "/cuaderno",    label: "Cuaderno" },
-  { href: "/bodega",     label: "Bodega" },
-  { href: "/cuarteles",  label: "Cuarteles" },
-  { href: "/productos",  label: "Productos" },
-  { href: "/ajustes",    label: "Ajustes" },
+  { href: "/dashboard",    label: "Inicio" },
+  { href: "/ordenes",      label: "Órdenes" },
+  { href: "/cuaderno",     label: "Cuaderno" },
+  { href: "/bodega",       label: "Bodega" },
+  { href: "/calculadora",  label: "Calcular" },
+  { href: "/cuarteles",    label: "Cuarteles" },
+  { href: "/productos",    label: "Productos" },
+  { href: "/ajustes",      label: "Ajustes" },
 ];
 
 // Componente interno que lee searchParams (necesita Suspense en el padre)
@@ -22,6 +24,17 @@ function NavContent({ empresaId }: { empresaId?: string }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const currentEmpresa = empresaId || searchParams.get("empresa") || "";
+  const { isAdmin } = useRol();
+  const [borradoresCount, setBorradoresCount] = useState(0);
+
+  useEffect(() => {
+    if (!isAdmin) { setBorradoresCount(0); return; }
+    supabase
+      .from("ordenes_trabajo")
+      .select("id", { count: "exact", head: true })
+      .eq("estado", "borrador")
+      .then(({ count }) => setBorradoresCount(count ?? 0));
+  }, [isAdmin, pathname]);
 
   const buildHref = (base: string) =>
     currentEmpresa ? `${base}?empresa=${currentEmpresa}` : base;
@@ -39,13 +52,17 @@ function NavContent({ empresaId }: { empresaId?: string }) {
         <div style={links}>
           {NAV_LINKS.map((l) => {
             const active = pathname.startsWith(l.href);
+            const showBadge = l.href === "/ordenes" && isAdmin && borradoresCount > 0;
             return (
               <Link
                 key={l.href}
                 href={buildHref(l.href)}
-                style={{ ...linkStyle, ...(active ? activeLinkStyle : {}) }}
+                style={{ ...linkStyle, ...(active ? activeLinkStyle : {}), position: "relative" }}
               >
                 {l.label}
+                {showBadge && (
+                  <span style={badge}>{borradoresCount > 9 ? "9+" : borradoresCount}</span>
+                )}
               </Link>
             );
           })}
@@ -129,6 +146,25 @@ const linkStyle: React.CSSProperties = {
 const activeLinkStyle: React.CSSProperties = {
   background: "rgba(255,255,255,0.15)",
   color: "#fff",
+};
+
+const badge: React.CSSProperties = {
+  position: "absolute",
+  top: "-5px",
+  right: "-7px",
+  background: "#dc2626",
+  color: "#fff",
+  borderRadius: "999px",
+  fontSize: "10px",
+  fontWeight: 800,
+  minWidth: "16px",
+  height: "16px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "0 4px",
+  lineHeight: "1",
+  pointerEvents: "none",
 };
 
 const logoutBtn: React.CSSProperties = {

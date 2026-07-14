@@ -28,6 +28,8 @@ export default function AdminUsuariosPage() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
+      const { data: u } = await supabase.from("usuarios").select("rol").eq("id", user.id).single();
+      if (u?.rol !== "admin") { router.push("/dashboard"); return; }
       await load();
     };
     init();
@@ -62,9 +64,15 @@ export default function AdminUsuariosPage() {
     }
     setSaving(true);
 
+    const { data: { session } } = await supabase.auth.getSession();
+    const authHeaders = {
+      "Content-Type": "application/json",
+      ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
+    };
+
     const res = await fetch("/api/usuarios", {
       method: editing ? "PATCH" : "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders,
       body: JSON.stringify(
         editing
           ? { id: editing.id, nombre: fNombre, rut: fRut || null, rol: fRol, password: fPassword || undefined }
@@ -82,11 +90,16 @@ export default function AdminUsuariosPage() {
 
   const handleDelete = async (u: Usuario) => {
     if (!confirm(`¿Eliminar a ${u.nombre}? Esta acción no se puede deshacer.`)) return;
-    await fetch("/api/usuarios", {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/usuarios", {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
+      },
       body: JSON.stringify({ id: u.id }),
     });
+    if (!res.ok) { const json = await res.json(); setError(json.error || "Error al eliminar."); return; }
     await load();
   };
 

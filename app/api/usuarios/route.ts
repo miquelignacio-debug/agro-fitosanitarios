@@ -8,7 +8,19 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+async function requireAdmin(req: NextRequest): Promise<NextResponse | null> {
+  const token = req.headers.get("authorization")?.replace("Bearer ", "");
+  if (!token) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+  const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+  if (!user) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+  const { data } = await supabaseAdmin.from("usuarios").select("rol").eq("id", user.id).single();
+  if (data?.rol !== "admin") return NextResponse.json({ error: "Sin permisos de administrador." }, { status: 403 });
+  return null;
+}
+
 export async function POST(req: NextRequest) {
+  const authError = await requireAdmin(req);
+  if (authError) return authError;
   const { email, password, nombre, rut, rol } = await req.json();
 
   if (!email || !password || !nombre) {
@@ -39,6 +51,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const authError = await requireAdmin(req);
+  if (authError) return authError;
   const { id, nombre, rut, rol, password } = await req.json();
 
   if (!id) return NextResponse.json({ error: "ID requerido." }, { status: 400 });
@@ -55,6 +69,8 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const authError = await requireAdmin(req);
+  if (authError) return authError;
   const { id } = await req.json();
   if (!id) return NextResponse.json({ error: "ID requerido." }, { status: 400 });
 

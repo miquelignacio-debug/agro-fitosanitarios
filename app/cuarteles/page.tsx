@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
-import type { Cuartel, Empresa } from "@/lib/types";
+import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
+import type { Cuartel, Empresa, OrdenTrabajo } from "@/lib/types";
+
+type HistorialOT = Pick<OrdenTrabajo, "id" | "numero" | "fecha_aplicacion" | "fecha_solicitud" | "estado" | "funcion"> & {
+  ot_productos: { dosis_real: number; dosis_unidad: string; productos: { nombre_comercial: string } | null }[];
+};
 
 function CuartelesContent() {
   const router = useRouter();
@@ -19,6 +24,9 @@ function CuartelesContent() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [historialCuartel, setHistorialCuartel] = useState<Cuartel | null>(null);
+  const [historial, setHistorial] = useState<HistorialOT[]>([]);
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -48,7 +56,7 @@ function CuartelesContent() {
   const switchEmpresa = (eid: string) => {
     setEmpresaId(eid);
     router.push(`/cuarteles?empresa=${eid}`);
-    load(eid);
+    // No llamar load() aquí — el useEffect lo dispara al cambiar empresaParam
   };
 
   const handleSave = async () => {
@@ -76,6 +84,28 @@ function CuartelesContent() {
       setEditing(null);
     }
     setSaving(false);
+  };
+
+  const handleHistorial = async (c: Cuartel) => {
+    setHistorialCuartel(c);
+    setHistorial([]);
+    setLoadingHistorial(true);
+    const { data: otCuarteles } = await supabase
+      .from("ot_cuarteles")
+      .select("ot_id")
+      .eq("cuartel_id", c.id);
+    const otIds = (otCuarteles ?? []).map((r: { ot_id: string }) => r.ot_id);
+    if (otIds.length > 0) {
+      const { data } = await supabase
+        .from("ordenes_trabajo")
+        .select("id, numero, fecha_aplicacion, fecha_solicitud, estado, funcion, ot_productos(dosis_real, dosis_unidad, productos(nombre_comercial))")
+        .in("id", otIds)
+        .in("estado", ["emitida", "en_ejecucion", "finalizada"])
+        .order("fecha_aplicacion", { ascending: false })
+        .limit(30);
+      setHistorial((data as unknown as HistorialOT[]) || []);
+    }
+    setLoadingHistorial(false);
   };
 
   const filtered = cuarteles.filter(
@@ -143,12 +173,71 @@ function CuartelesContent() {
                     <td style={{ ...td, textAlign: "right" }}>{c.hileras || "—"}</td>
                     <td style={{ ...td, textAlign: "center" }}>{c.activo ? "✓" : "—"}</td>
                     <td style={td}>
-                      <button onClick={() => setEditing(c)} style={editBtn}>Editar</button>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button onClick={() => handleHistorial(c)} style={historialBtn}>Historial</button>
+                        <button onClick={() => setEditing(c)} style={editBtn}>Editar</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Modal historial de aplicaciones */}
+        {historialCuartel && (
+          <div style={overlay}>
+            <div style={{ ...modal, maxWidth: "720px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                <h2 style={{ fontSize: "18px", fontWeight: 800, color: "#1a4731" }}>
+                  Historial — Cuartel {historialCuartel.codigo}
+                </h2>
+                <button onClick={() => setHistorialCuartel(null)} style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: "#6b7280", lineHeight: 1 }}>×</button>
+              </div>
+              <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "14px" }}>
+                {historialCuartel.especie} {historialCuartel.variedad} · {historialCuartel.superficie_real ?? "?"} ha · Últimas 30 aplicaciones emitidas o finalizadas
+              </p>
+              {loadingHistorial ? (
+                <p style={{ color: "#6b7280", padding: "20px 0" }}>Cargando...</p>
+              ) : historial.length === 0 ? (
+                <p style={{ color: "#6b7280", padding: "20px 0" }}>Sin aplicaciones registradas para este cuartel.</p>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        {["N° OT", "Fecha aplic.", "Estado", "Función", "Productos"].map(h => (
+                          <th key={h} style={{ padding: "8px 10px", background: "#f0f4f2", fontWeight: 700, fontSize: "11px", color: "#374151", textAlign: "left", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historial.map(ot => (
+                        <tr key={ot.id}>
+                          <td style={{ padding: "8px 10px", fontSize: "13px", fontWeight: 800, color: "#1a4731", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" }}>#{ot.numero}</td>
+                          <td style={{ padding: "8px 10px", fontSize: "12px", color: "#374151", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" }}>{ot.fecha_aplicacion ?? ot.fecha_solicitud}</td>
+                          <td style={{ padding: "8px 10px", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" }}>
+                            <span style={{ padding: "2px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 700, background: (ESTADOS_OT_COLOR[ot.estado] ?? "#6b7280") + "18", color: ESTADOS_OT_COLOR[ot.estado] ?? "#6b7280", border: `1px solid ${(ESTADOS_OT_COLOR[ot.estado] ?? "#6b7280")}40` }}>
+                              {ESTADOS_OT[ot.estado] ?? ot.estado}
+                            </span>
+                          </td>
+                          <td style={{ padding: "8px 10px", fontSize: "12px", color: "#374151", borderBottom: "1px solid #f3f4f6" }}>{ot.funcion?.join(", ") ?? "—"}</td>
+                          <td style={{ padding: "8px 10px", fontSize: "12px", color: "#374151", borderBottom: "1px solid #f3f4f6" }}>
+                            {ot.ot_productos.length === 0 ? "—" : ot.ot_productos.map((p, i) => (
+                              <div key={i}>{p.productos?.nombre_comercial ?? "—"} <span style={{ color: "#6b7280" }}>{p.dosis_real} {p.dosis_unidad}</span></div>
+                            ))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "18px" }}>
+                <button onClick={() => setHistorialCuartel(null)} style={cancelBtn}>Cerrar</button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -219,6 +308,7 @@ const searchInput: React.CSSProperties = { padding: "9px 14px", borderRadius: "1
 const table: React.CSSProperties = { width: "100%", background: "#fff", borderRadius: "14px", overflow: "hidden", border: "1px solid #e5e7eb", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" };
 const th: React.CSSProperties = { padding: "10px 12px", background: "#f0f4f2", fontWeight: 700, fontSize: "12px", color: "#374151", textAlign: "left", whiteSpace: "nowrap", borderBottom: "1px solid #e5e7eb" };
 const td: React.CSSProperties = { padding: "10px 12px", fontSize: "13px", color: "#374151", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" };
+const historialBtn: React.CSSProperties = { padding: "4px 12px", borderRadius: "6px", border: "1px solid #6b7280", background: "transparent", color: "#374151", fontSize: "12px", fontWeight: 600, cursor: "pointer" };
 const editBtn: React.CSSProperties = { padding: "4px 12px", borderRadius: "6px", border: "1px solid #1a4731", background: "transparent", color: "#1a4731", fontSize: "12px", fontWeight: 700, cursor: "pointer" };
 const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 };
 const modal: React.CSSProperties = { background: "#fff", borderRadius: "16px", padding: "28px", width: "90%", maxWidth: "560px", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 8px 32px rgba(0,0,0,0.2)" };
