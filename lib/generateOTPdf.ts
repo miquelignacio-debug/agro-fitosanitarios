@@ -241,7 +241,12 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
     head: [["N°", "Producto", "Ingrediente activo", "Dosis real", "Consumo total", "Carencia\n(días)", "Reingreso\n(horas)", "Fecha viable\ncosecha"]],
     body: ot.ot_productos.map((p, i) => {
       const unidad = p.dosis_unidad;
-      const unidadDisplay = prefixUnidad(p.producto.unidad_dosis) || prefixUnidad(unidad);
+      const dosisPrefix = unidad.split("/")[0].toLowerCase();
+      // Consumo total se guarda en unidad de bodega (lt/kg); inferir si no está seteada
+      const unidadDisplay = p.producto.unidad_bodega ?? (
+        (dosisPrefix === "cc" || dosisPrefix === "ml") ? "lt" :
+        dosisPrefix === "g" ? "kg" : dosisPrefix
+      );
       return [
         String(i + 1),
         p.producto.nombre_comercial,
@@ -299,7 +304,8 @@ export async function generateOTPdf(ot: OTParaPDF): Promise<void> {
       head: [heads],
       body: ot.ot_productos.map((p, i) => {
         const { dosisMaq, dosisSaldo } = dosisPorMaquinada(p.dosis_real, p.dosis_unidad, capacidad, litrosSaldo, moj!);
-        const unit = prefixUnidad(p.producto.unidad_dosis) || prefixUnidad(p.dosis_unidad);
+        // Usar siempre la unidad registrada en la OT, nunca la del catálogo
+        const unit = prefixUnidad(p.dosis_unidad);
         const row = [
           String(i + 1),
           p.producto.nombre_comercial,
