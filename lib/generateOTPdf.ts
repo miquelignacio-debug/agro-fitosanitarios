@@ -83,9 +83,9 @@ function dosisPorMaquinada(
   };
 }
 
-// Extrae solo el prefijo de unidad: "cc/100lt" → "cc", "lt/ha" → "lt"
+// Extrae solo el prefijo de unidad: "cc/100lt" → "cc", "lt/ha" → "lt", null → ""
 function prefixUnidad(unidad: string | null | undefined): string {
-  return unidad?.split("/")[0] || "lt";
+  return unidad?.split("/")[0] ?? "";
 }
 
 export async function generateOTPdf(ot: OTParaPDF): Promise<void> {

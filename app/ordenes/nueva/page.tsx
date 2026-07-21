@@ -141,13 +141,14 @@ function NuevaOTContent() {
             cantidad = dosis * supTotal;
           }
           if (cantidad <= 0) continue;
-          // Convertir a unidad de bodega (cc→lt, g→kg)
+          // Convertir a unidad de bodega (cc/ml→lt, g→kg, siempre)
           const prefix = unit.split("/")[0].toLowerCase();
           const prodCatalog = productos.find(p => p.id === prod.producto_id);
-          const bodega = prodCatalog?.unidad_bodega ?? null;
-          if (bodega === "lt" && (prefix === "cc" || prefix === "ml")) cantidad /= 1000;
-          else if (bodega === "kg" && prefix === "g") cantidad /= 1000;
-          const unidadDisplay = bodega || prefix;
+          if (prefix === "cc" || prefix === "ml") cantidad /= 1000;
+          else if (prefix === "g") cantidad /= 1000;
+          const unidadDisplay = (prefix === "cc" || prefix === "ml") ? "lt" :
+            prefix === "g" ? "kg" :
+            prodCatalog?.unidad_bodega ?? prefix;
           const existing = comprMap.get(prod.producto_id) ?? [];
           existing.push({ ot_numero: ot.numero, cantidad: Math.round(cantidad * 100) / 100, unidad: unidadDisplay });
           comprMap.set(prod.producto_id, existing);
@@ -210,11 +211,10 @@ function NuevaOTContent() {
     } else {
       return null;
     }
-    // Convertir unidades menores a unidad de bodega (cc→lt, g→kg)
+    // Convertir unidades menores a unidad de bodega (cc/ml→lt, g→kg, siempre)
     const prefix = row.dosis_unidad.split("/")[0].toLowerCase();
-    const prod = productos.find(p => p.id === row.producto_id);
-    if (prod?.unidad_bodega === "lt" && (prefix === "cc" || prefix === "ml")) cantidad /= 1000;
-    else if (prod?.unidad_bodega === "kg" && prefix === "g") cantidad /= 1000;
+    if (prefix === "cc" || prefix === "ml") cantidad /= 1000;
+    else if (prefix === "g") cantidad /= 1000;
     return Math.round(cantidad * 100) / 100;
   };
 
@@ -432,7 +432,7 @@ function NuevaOTContent() {
           {/* ── Identificación ── */}
           <section style={section}>
             <h2 style={sectionTitle}>Identificación</h2>
-            <div style={grid2}>
+            <div className="grid-2">
               <Field label="Empresa *">
                 <select value={empresa} onChange={e => setEmpresa(e.target.value)} style={inputStyle}>
                   <option value="">— Seleccionar —</option>
@@ -510,7 +510,7 @@ function NuevaOTContent() {
                 </p>
               )}
             </div>
-            <div style={grid2}>
+            <div className="grid-2">
               <Field label="Plagas / enfermedades a controlar">
                 <PlagasSelector
                   catalog={catalogPlagas}
@@ -909,7 +909,7 @@ const pageTitle: React.CSSProperties    = { fontSize: "24px", fontWeight: 800, c
 const formCard: React.CSSProperties     = { background: "#fff", borderRadius: "16px", border: "1px solid #e5e7eb", overflow: "hidden" };
 const section: React.CSSProperties      = { padding: "22px 26px", borderBottom: "1px solid #f3f4f6" };
 const sectionTitle: React.CSSProperties = { fontSize: "13px", fontWeight: 700, color: "#1a4731", marginBottom: "14px", textTransform: "uppercase", letterSpacing: "0.05em" };
-const grid2: React.CSSProperties        = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" };
+
 const grid3: React.CSSProperties        = { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px" };
 const labelStyle: React.CSSProperties   = { fontSize: "12px", fontWeight: 700, color: "#374151" };
 const hintStyle: React.CSSProperties    = { fontSize: "11px", color: "#92400e", marginTop: "2px" };

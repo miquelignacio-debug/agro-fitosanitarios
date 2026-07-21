@@ -44,6 +44,7 @@ function DashboardContent() {
   const [empresaId, setEmpresaId] = useState(empresaParam);
   const [ordenes, setOrdenes] = useState<OrdenTrabajo[]>([]);
   const [borradores, setBorradores] = useState<BorradorOT[]>([]);
+  const [proximas, setProximas] = useState<OrdenTrabajo[]>([]);
   const [kpiFinalizadas, setKpiFinalizadas] = useState(0);
   const [stockBajo, setStockBajo] = useState<StockActual[]>([]);
   const [carencias, setCarencias] = useState<CarenciaInfo[]>([]);
@@ -68,9 +69,25 @@ function DashboardContent() {
     setLoading(true);
     await Promise.all([
       loadOrdenes(eid), loadStock(eid), loadCarencias(eid),
-      loadCostos(eid), loadBorradores(eid), loadKpiFinalizadas(eid),
+      loadCostos(eid), loadBorradores(eid), loadKpiFinalizadas(eid), loadProximas(eid),
     ]);
     setLoading(false);
+  };
+
+  const loadProximas = async (eid: string) => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const en14dias = new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10);
+    const { data } = await supabase
+      .from("ordenes_trabajo")
+      .select("*")
+      .eq("empresa_id", eid)
+      .in("estado", ["borrador", "emitida"])
+      .not("fecha_aplicacion", "is", null)
+      .gte("fecha_aplicacion", hoy)
+      .lte("fecha_aplicacion", en14dias)
+      .order("fecha_aplicacion", { ascending: true })
+      .limit(10);
+    setProximas((data as OrdenTrabajo[]) || []);
   };
 
   const loadBorradores = async (eid: string) => {
@@ -322,6 +339,46 @@ function DashboardContent() {
                           Cosecha viable: {new Date(c.fecha_viable + "T12:00:00").toLocaleDateString("es-CL")}
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* ── Próximas OTs (ancho completo) ── */}
+            {proximas.length > 0 && (
+              <section style={{ ...panel, marginBottom: "20px", borderColor: "#bfdbfe", background: "#eff6ff" }}>
+                <div style={panelHeader}>
+                  <h2 style={{ ...panelTitle, color: "#1e40af" }}>Próximas aplicaciones (14 días)</h2>
+                  <Link href={`/ordenes?empresa=${empresaId}`} style={{ ...linkMore, color: "#1e40af" }}>Ver todas →</Link>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "10px" }}>
+                  {proximas.map(ot => {
+                    const hoyMs = Date.now();
+                    const aplMs = new Date(ot.fecha_aplicacion! + "T12:00:00").getTime();
+                    const dias = Math.ceil((aplMs - hoyMs) / 86400000);
+                    const esHoy = dias === 0;
+                    const esMañana = dias === 1;
+                    const label = esHoy ? "Hoy" : esMañana ? "Mañana" : `En ${dias} días`;
+                    const labelColor = dias <= 1 ? "#dc2626" : dias <= 3 ? "#d97706" : "#1e40af";
+                    return (
+                      <Link key={ot.id} href={`/ordenes/${ot.id}?empresa=${empresaId}`}
+                        style={{ background: "#fff", borderRadius: "12px", border: "1.5px solid #bfdbfe", padding: "12px 14px", textDecoration: "none", display: "block" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                          <span style={{ fontWeight: 700, fontSize: "13px", color: "#1a4731" }}>OT #{ot.numero}</span>
+                          <span style={{ fontSize: "11px", fontWeight: 700, color: labelColor, background: `${labelColor}18`, padding: "2px 8px", borderRadius: "999px" }}>
+                            {label}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "13px", color: "#374151", fontWeight: 600 }}>
+                          {new Date(ot.fecha_aplicacion! + "T12:00:00").toLocaleDateString("es-CL", { weekday: "short", day: "numeric", month: "short" })}
+                        </div>
+                        <div style={{ marginTop: "4px" }}>
+                          <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "999px", background: ESTADOS_OT_COLOR[ot.estado] + "20", color: ESTADOS_OT_COLOR[ot.estado], border: `1px solid ${ESTADOS_OT_COLOR[ot.estado]}40` }}>
+                            {ESTADOS_OT[ot.estado]}
+                          </span>
+                        </div>
+                      </Link>
                     );
                   })}
                 </div>

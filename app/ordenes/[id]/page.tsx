@@ -59,10 +59,9 @@ const TRANS_LABEL: Record<string, string> = {
 };
 
 // Consumo de producto para un volumen de agua dado, expresado en la unidad de bodega.
-// cc/100lt → lt (/1000), g/100lt → kg (/1000). lt y kg pasan directamente.
+// cc/ml → lt (/1000), g → kg (/1000). lt y kg pasan directamente.
 function calcConsumoFromWater(
   dosis: number, unidad: string, mojSol: number, aguaLt: number,
-  bodegaUnidad?: "lt" | "kg" | null,
 ): number {
   if (aguaLt <= 0) return 0;
   let cantidad = 0;
@@ -70,8 +69,8 @@ function calcConsumoFromWater(
   else if (unidad.includes("/ha") && mojSol > 0) cantidad = dosis * aguaLt / mojSol;
   else return 0;
   const prefix = unidad.split("/")[0].toLowerCase();
-  if (bodegaUnidad === "lt" && (prefix === "cc" || prefix === "ml")) cantidad /= 1000;
-  else if (bodegaUnidad === "kg" && prefix === "g") cantidad /= 1000;
+  if (prefix === "cc" || prefix === "ml") cantidad /= 1000;
+  else if (prefix === "g") cantidad /= 1000;
   return Math.round(cantidad * 1000) / 1000;
 }
 
@@ -200,11 +199,15 @@ function OTDetalleContent() {
 
     // Calcular consumos por producto (resultado en unidad de bodega)
     const consumos = ot.ot_productos.map(p => {
-      const bodega          = p.producto.unidad_bodega;
-      const consumoCampo    = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaCampoLt, bodega);
-      const consumoBarbecho = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaBarbechoLt, bodega);
-      const dosisMaq        = calcDosisMaq(p.dosis_real, p.dosis_unidad, mojSol, capacidadLt);
-      const unidadStock     = bodega || "lt";
+      const bodega       = p.producto.unidad_bodega;
+      const dosisPrefix  = p.dosis_unidad.split("/")[0].toLowerCase();
+      const consumoCampo    = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaCampoLt);
+      const consumoBarbecho = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaBarbechoLt);
+      const dosisMaq     = calcDosisMaq(p.dosis_real, p.dosis_unidad, mojSol, capacidadLt);
+      const unidadStock  = bodega ?? (
+        (dosisPrefix === "cc" || dosisPrefix === "ml") ? "lt" :
+        dosisPrefix === "g" ? "kg" : dosisPrefix
+      );
       return { p, consumoCampo, consumoBarbecho, dosisMaq, unidadStock };
     });
 
@@ -555,7 +558,7 @@ function OTDetalleContent() {
         )}
 
         {/* ── Detalle en dos columnas ── */}
-        <div style={grid2}>
+        <div className="grid-2">
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div style={card}>
               <h3 style={cardTitle}>Responsables</h3>
@@ -752,7 +755,7 @@ function OTDetalleContent() {
               <p style={{ fontSize: "13px", color: "#6b7280", marginBottom: "20px" }}>
                 Completa los datos reales. El consumo de productos y la salida de bodega se calcularán automáticamente.
               </p>
-              <div style={grid2modal}>
+              <div className="grid-2" style={{ marginBottom: "14px" }}>
                 <ModalField label="Hora inicio">
                   <input type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)} style={inputStyle} />
                 </ModalField>
@@ -804,10 +807,11 @@ function OTDetalleContent() {
                       <div style={{ borderTop: "1px solid #bbf7d0", marginTop: "4px", paddingTop: "4px" }}>
                         <span style={{ color: "#374151", fontWeight: 700 }}>Consumo estimado por producto:</span>
                         {ot.ot_productos.map(p => {
-                          const bodega = p.producto.unidad_bodega;
-                          const cc = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSolVal, aguaCampo, bodega);
-                          const cb = remanenteLtV > 0 ? calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSolVal, remanenteLtV, bodega) : 0;
-                          const u  = bodega || "lt";
+                          const bodega      = p.producto.unidad_bodega;
+                          const dpfx        = p.dosis_unidad.split("/")[0].toLowerCase();
+                          const cc = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSolVal, aguaCampo);
+                          const cb = remanenteLtV > 0 ? calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSolVal, remanenteLtV) : 0;
+                          const u  = bodega ?? ((dpfx === "cc" || dpfx === "ml") ? "lt" : dpfx === "g" ? "kg" : dpfx);
                           const total = cc + cb;
                           return (
                             <div key={p.id} style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>
@@ -880,7 +884,6 @@ const dangerBtn: React.CSSProperties     = { padding: "8px 18px", borderRadius: 
 const alertBox: React.CSSProperties      = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "10px", padding: "12px 16px", marginBottom: "16px", fontSize: "13px", color: "#dc2626", gap: "12px", flexWrap: "wrap" };
 const cancelSmall: React.CSSProperties   = { padding: "6px 14px", borderRadius: "7px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: "pointer" };
 const confirmDanger: React.CSSProperties = { padding: "6px 14px", borderRadius: "7px", background: "#dc2626", color: "#fff", fontWeight: 700, fontSize: "13px", border: "none", cursor: "pointer" };
-const grid2: React.CSSProperties         = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" };
 const card: React.CSSProperties          = { background: "#fff", borderRadius: "14px", border: "1px solid #e5e7eb", padding: "18px 20px" };
 const cardTitle: React.CSSProperties     = { fontSize: "13px", fontWeight: 700, color: "#1a4731", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "12px" };
 const tableRow: React.CSSProperties      = { display: "flex", alignItems: "center", gap: "8px", padding: "8px 0", borderBottom: "1px solid #f3f4f6" };
@@ -888,7 +891,7 @@ const ppeBadge: React.CSSProperties      = { padding: "3px 10px", borderRadius: 
 const overlay: React.CSSProperties       = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 };
 const modal: React.CSSProperties         = { background: "#fff", borderRadius: "16px", padding: "28px", width: "90%", maxWidth: "560px", boxShadow: "0 8px 32px rgba(0,0,0,0.2)", maxHeight: "90vh", overflowY: "auto" };
 const modalTitle: React.CSSProperties    = { fontSize: "18px", fontWeight: 800, color: "#1a4731", marginBottom: "8px" };
-const grid2modal: React.CSSProperties    = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" };
+
 const inputStyle: React.CSSProperties    = { padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "14px", background: "#fafafa", color: "#111", width: "100%", boxSizing: "border-box" };
 
 export default function OTDetallePage() { return <Suspense><OTDetalleContent /></Suspense>; }
