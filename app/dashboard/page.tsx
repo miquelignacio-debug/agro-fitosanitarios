@@ -269,7 +269,7 @@ function DashboardContent() {
         <div style={pageHeader}>
           <div>
             <h1 style={pageTitle}>{empresa?.nombre || "—"}</h1>
-            <p style={pageSubtitle}>Panel de gestión fitosanitaria</p>
+            <p style={pageSubtitle}>Panel de gestión fitosanitaria · v2</p>
           </div>
           {(isAdmin || isOperador) && (
             <Link href={`/ordenes/nueva?empresa=${empresaId}`} style={primaryBtn}>+ Nueva orden</Link>
