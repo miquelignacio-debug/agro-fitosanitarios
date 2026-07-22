@@ -17,8 +17,9 @@ type BorradorOT = OrdenTrabajo & {
 };
 
 type ProximaOT = OrdenTrabajo & {
-  ot_cuarteles: { cuartel: { codigo: string } }[];
+  ot_cuarteles: { superficie_ha: number; cuartel: { codigo: string } }[];
   ot_productos: { dosis_real: number; dosis_unidad: string; producto: { nombre_comercial: string } }[];
+  ot_aplicadores: { cantidad_maquinadas: number | null; personal: { nombre: string } | null; operador: { nombre: string } | null }[];
 };
 
 type CarenciaInfo = {
@@ -86,7 +87,7 @@ function DashboardContent() {
     const en14dias = `${fin.getFullYear()}-${String(fin.getMonth()+1).padStart(2,'0')}-${String(fin.getDate()).padStart(2,'0')}`;
     const { data } = await supabase
       .from("ordenes_trabajo")
-      .select(`*, ot_cuarteles(cuartel:cuarteles(codigo)), ot_productos(dosis_real, dosis_unidad, producto:productos(nombre_comercial))`)
+      .select(`*, ot_cuarteles(superficie_ha, cuartel:cuarteles(codigo)), ot_productos(dosis_real, dosis_unidad, producto:productos(nombre_comercial)), ot_aplicadores(cantidad_maquinadas, personal:personal!personal_id(nombre), operador:operadores(nombre))`)
       .eq("empresa_id", eid)
       .in("estado", ["borrador", "emitida", "en_ejecucion"])
       .not("fecha_aplicacion", "is", null)
@@ -430,10 +431,15 @@ function DashboardContent() {
                       </div>
                       {/* Filas de OT */}
                       {ots.map((ot, oi) => {
-                        const cuarteles = (ot.ot_cuarteles || []).map((c: { cuartel: { codigo: string } }) => c.cuartel?.codigo).filter(Boolean).join(" · ");
+                        const cuarteles = (ot.ot_cuarteles || []).map((c: { superficie_ha: number; cuartel: { codigo: string } }) => c.cuartel?.codigo).filter(Boolean).join(" · ");
+                        const totalHa = (ot.ot_cuarteles || []).reduce((s, c: { superficie_ha: number }) => s + (c.superficie_ha || 0), 0);
+                        const totalMaq = (ot.ot_aplicadores || []).reduce((s, a: { cantidad_maquinadas: number | null }) => s + (a.cantidad_maquinadas || 0), 0);
+                        const aplicadores = (ot.ot_aplicadores || [])
+                          .map((a: { personal: { nombre: string } | null; operador: { nombre: string } | null }) => a.personal?.nombre ?? a.operador?.nombre ?? "")
+                          .filter(Boolean).join(", ");
                         return (
                           <div key={ot.id} style={{ padding: "10px 14px", borderTop: oi > 0 ? "1px solid #f0f0f0" : undefined, background: "#fff" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                 <span style={{ fontWeight: 800, fontSize: "13px", color: "#1a4731" }}>OT #{ot.numero}</span>
                                 <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "999px", background: ESTADOS_OT_COLOR[ot.estado] + "20", color: ESTADOS_OT_COLOR[ot.estado], border: `1px solid ${ESTADOS_OT_COLOR[ot.estado]}40` }}>
@@ -444,11 +450,24 @@ function DashboardContent() {
                                 Ver detalle →
                               </Link>
                             </div>
-                            {cuarteles && (
-                              <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px" }}>
-                                📍 {cuarteles}
-                              </div>
-                            )}
+
+                            {/* Cuarteles + métricas */}
+                            <div style={{ display: "flex", flexWrap: "wrap" as const, gap: "12px", marginBottom: "7px", fontSize: "12px" }}>
+                              {cuarteles && (
+                                <span style={{ color: "#6b7280" }}>📍 {cuarteles}</span>
+                              )}
+                              {totalHa > 0 && (
+                                <span style={{ color: "#374151", fontWeight: 600 }}>🌿 {totalHa.toLocaleString("es-CL", { maximumFractionDigits: 2 })} ha</span>
+                              )}
+                              {totalMaq > 0 && (
+                                <span style={{ color: "#374151", fontWeight: 600 }}>🚜 {totalMaq} maquinada{totalMaq !== 1 ? "s" : ""}</span>
+                              )}
+                              {aplicadores && (
+                                <span style={{ color: "#374151" }}>👤 {aplicadores}</span>
+                              )}
+                            </div>
+
+                            {/* Productos y dosis */}
                             <div style={{ display: "flex", flexDirection: "column" as const, gap: "3px" }}>
                               {(ot.ot_productos || []).map((p, pi) => (
                                 <div key={pi} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" }}>
