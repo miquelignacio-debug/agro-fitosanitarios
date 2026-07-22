@@ -80,8 +80,10 @@ function DashboardContent() {
   };
 
   const loadProximas = async (eid: string) => {
-    const hoyStr = new Date().toISOString().slice(0, 10);
-    const en14dias = new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10);
+    const ahora = new Date();
+    const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`;
+    const fin = new Date(ahora); fin.setDate(fin.getDate() + 14);
+    const en14dias = `${fin.getFullYear()}-${String(fin.getMonth()+1).padStart(2,'0')}-${String(fin.getDate()).padStart(2,'0')}`;
     const { data } = await supabase
       .from("ordenes_trabajo")
       .select(`*, ot_cuarteles(cuartel:cuarteles(codigo)), ot_productos(dosis_real, dosis_unidad, producto:productos(nombre_comercial))`)
@@ -273,7 +275,7 @@ function DashboardContent() {
         <div style={pageHeader}>
           <div>
             <h1 style={pageTitle}>{empresa?.nombre || "—"}</h1>
-            <p style={pageSubtitle}>Panel de gestión fitosanitaria · v2</p>
+            <p style={pageSubtitle}>Panel de gestión fitosanitaria</p>
           </div>
           {(isAdmin || isOperador) && (
             <Link href={`/ordenes/nueva?empresa=${empresaId}`} style={primaryBtn}>+ Nueva orden</Link>
@@ -351,45 +353,60 @@ function DashboardContent() {
 
             {/* ── Programación 14 días (ancho completo) ── */}
             <section style={{ ...panel, marginBottom: "20px" }}>
-              <div style={panelHeader}>
-                <h2 style={panelTitle}>Programación — próximos 14 días</h2>
+              <div style={{ ...panelHeader, marginBottom: "4px" }}>
+                <div>
+                  <h2 style={panelTitle}>Programación — próximos 14 días</h2>
+                  {empresa?.nombre && (
+                    <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: "2px" }}>{empresa.nombre}</p>
+                  )}
+                </div>
                 <Link href={`/ordenes?empresa=${empresaId}`} style={linkMore}>Ver todas →</Link>
               </div>
 
-              {/* Tira de calendario */}
-              <div style={{ display: "flex", gap: "6px", overflowX: "auto", paddingBottom: "14px", marginBottom: "16px" }}>
-                {Array.from({ length: 14 }, (_, i) => {
-                  const d = new Date(Date.now() + i * 86400_000);
-                  const dateStr = d.toISOString().slice(0, 10);
-                  const tieneOT = proximas.some(ot => ot.fecha_aplicacion === dateStr);
-                  const esHoy = i === 0;
-                  return (
-                    <div key={i} style={{
-                      minWidth: "46px", padding: "8px 4px", borderRadius: "10px", flexShrink: 0,
-                      border: `1.5px solid ${esHoy ? "#1a4731" : tieneOT ? "#86efac" : "#e5e7eb"}`,
-                      background: esHoy ? "#1a4731" : tieneOT ? "#f0fdf4" : "#fff",
-                      color: esHoy ? "#fff" : tieneOT ? "#15803d" : "#9ca3af",
-                      textAlign: "center" as const,
-                    }}>
-                      <div style={{ fontSize: "9px", fontWeight: 600, textTransform: "uppercase" as const }}>
-                        {d.toLocaleDateString("es-CL", { weekday: "short" })}
-                      </div>
-                      <div style={{ fontSize: "20px", fontWeight: 800, lineHeight: 1.1 }}>{d.getDate()}</div>
-                      <div style={{ fontSize: "9px", marginTop: "1px" }}>
-                        {d.toLocaleDateString("es-CL", { month: "short" })}
-                      </div>
-                      {tieneOT && (
-                        <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: esHoy ? "#fff" : "#15803d", margin: "4px auto 0" }} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              {/* Tira de calendario — usa fecha local, no UTC */}
+              {(() => {
+                const baseLocal = new Date();
+                baseLocal.setHours(0, 0, 0, 0);
+                return (
+                  <div style={{ display: "flex", gap: "5px", overflowX: "auto", paddingBottom: "14px", marginBottom: "16px", marginTop: "14px" }}>
+                    {Array.from({ length: 14 }, (_, i) => {
+                      const d = new Date(baseLocal.getTime() + i * 86400_000);
+                      const yyyy = d.getFullYear();
+                      const mm = String(d.getMonth()+1).padStart(2,'0');
+                      const dd = String(d.getDate()).padStart(2,'0');
+                      const dateStr = `${yyyy}-${mm}-${dd}`;
+                      const tieneOT = proximas.some(ot => ot.fecha_aplicacion === dateStr);
+                      const esHoy = i === 0;
+                      return (
+                        <div key={i} style={{
+                          minWidth: "44px", padding: "8px 4px", borderRadius: "10px", flexShrink: 0,
+                          border: `1.5px solid ${esHoy ? "#1a4731" : tieneOT ? "#86efac" : "#e5e7eb"}`,
+                          background: esHoy ? "#1a4731" : tieneOT ? "#f0fdf4" : "#fff",
+                          color: esHoy ? "#fff" : tieneOT ? "#15803d" : "#9ca3af",
+                          textAlign: "center" as const,
+                        }}>
+                          <div style={{ fontSize: "9px", fontWeight: 600, textTransform: "uppercase" as const }}>
+                            {d.toLocaleDateString("es-CL", { weekday: "short" })}
+                          </div>
+                          <div style={{ fontSize: "19px", fontWeight: 800, lineHeight: 1.1 }}>{d.getDate()}</div>
+                          <div style={{ fontSize: "9px", marginTop: "1px" }}>
+                            {d.toLocaleDateString("es-CL", { month: "short" })}
+                          </div>
+                          {tieneOT && (
+                            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: esHoy ? "#fff" : "#15803d", margin: "4px auto 0" }} />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
 
-              {/* Línea de tiempo agrupada por fecha */}
+              {/* Cronograma compacto — sin clicks, listo para pantallazo */}
               {proximas.length === 0 ? (
                 <p style={empty}>Sin aplicaciones programadas en los próximos 14 días.</p>
               ) : (() => {
+                const ahora2 = new Date(); ahora2.setHours(0,0,0,0);
                 const grupos: Record<string, ProximaOT[]> = {};
                 for (const ot of proximas) {
                   const f = ot.fecha_aplicacion!;
@@ -398,44 +415,53 @@ function DashboardContent() {
                 }
                 return Object.entries(grupos).sort(([a], [b]) => a.localeCompare(b)).map(([fecha, ots]) => {
                   const d = new Date(fecha + "T12:00:00");
-                  const hoyMs = new Date().setHours(0, 0, 0, 0);
-                  const dMs   = d.setHours(0, 0, 0, 0);
-                  const diff  = Math.round((dMs - hoyMs) / 86400000);
-                  const labelFecha = diff === 0 ? "Hoy" : diff === 1 ? "Mañana" : d.toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long" });
+                  const diff = Math.round((d.setHours(0,0,0,0) - ahora2.getTime()) / 86400000);
+                  const labelFecha = diff === 0 ? "HOY" : diff === 1 ? "MAÑANA" : d.toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long" }).toUpperCase();
                   const colorFecha = diff === 0 ? "#dc2626" : diff === 1 ? "#d97706" : "#1a4731";
+                  const bgFecha = diff === 0 ? "#fef2f2" : diff === 1 ? "#fffbeb" : "#f0fdf4";
                   return (
-                    <div key={fecha} style={{ marginBottom: "16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                        <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: colorFecha, flexShrink: 0 }} />
-                        <span style={{ fontWeight: 800, fontSize: "14px", color: colorFecha, textTransform: "capitalize" as const }}>{labelFecha}</span>
-                        <span style={{ fontSize: "12px", color: "#9ca3af" }}>{fecha}</span>
+                    <div key={fecha} style={{ marginBottom: "12px", border: `1.5px solid ${colorFecha}30`, borderRadius: "12px", overflow: "hidden" }}>
+                      {/* Cabecera de fecha */}
+                      <div style={{ background: bgFecha, borderBottom: `1px solid ${colorFecha}25`, padding: "8px 14px", display: "flex", alignItems: "center", gap: "10px" }}>
+                        <span style={{ fontWeight: 900, fontSize: "13px", color: colorFecha, letterSpacing: "0.04em" }}>{labelFecha}</span>
+                        <span style={{ fontSize: "12px", color: "#9ca3af" }}>
+                          {new Date(fecha + "T12:00:00").toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" })}
+                        </span>
                       </div>
-                      <div style={{ marginLeft: "18px", display: "flex", flexDirection: "column" as const, gap: "8px" }}>
-                        {ots.map(ot => {
-                          const cuarteles = (ot.ot_cuarteles || []).map((c: { cuartel: { codigo: string } }) => c.cuartel?.codigo).filter(Boolean).join(", ");
-                          return (
-                            <Link key={ot.id} href={`/ordenes/${ot.id}?empresa=${empresaId}`}
-                              style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "10px 14px", textDecoration: "none", display: "block" }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                                <span style={{ fontWeight: 700, fontSize: "13px", color: "#1a4731" }}>OT #{ot.numero}</span>
+                      {/* Filas de OT */}
+                      {ots.map((ot, oi) => {
+                        const cuarteles = (ot.ot_cuarteles || []).map((c: { cuartel: { codigo: string } }) => c.cuartel?.codigo).filter(Boolean).join(" · ");
+                        return (
+                          <div key={ot.id} style={{ padding: "10px 14px", borderTop: oi > 0 ? "1px solid #f0f0f0" : undefined, background: "#fff" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <span style={{ fontWeight: 800, fontSize: "13px", color: "#1a4731" }}>OT #{ot.numero}</span>
                                 <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "999px", background: ESTADOS_OT_COLOR[ot.estado] + "20", color: ESTADOS_OT_COLOR[ot.estado], border: `1px solid ${ESTADOS_OT_COLOR[ot.estado]}40` }}>
                                   {ESTADOS_OT[ot.estado]}
                                 </span>
                               </div>
-                              {cuarteles && (
-                                <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "4px" }}>
-                                  Cuarteles: {cuarteles}
-                                </div>
-                              )}
+                              <Link href={`/ordenes/${ot.id}?empresa=${empresaId}`} style={{ fontSize: "11px", color: "#6b7280", textDecoration: "none" }}>
+                                Ver detalle →
+                              </Link>
+                            </div>
+                            {cuarteles && (
+                              <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "6px" }}>
+                                📍 {cuarteles}
+                              </div>
+                            )}
+                            <div style={{ display: "flex", flexDirection: "column" as const, gap: "3px" }}>
                               {(ot.ot_productos || []).map((p, pi) => (
-                                <div key={pi} style={{ fontSize: "12px", color: "#374151", padding: "2px 0" }}>
-                                  · {p.producto?.nombre_comercial} — <strong>{p.dosis_real} {p.dosis_unidad}</strong>
+                                <div key={pi} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" }}>
+                                  <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: "#15803d", flexShrink: 0, display: "inline-block" }} />
+                                  <span style={{ color: "#111", fontWeight: 600 }}>{p.producto?.nombre_comercial}</span>
+                                  <span style={{ color: "#6b7280" }}>—</span>
+                                  <span style={{ color: "#1a4731", fontWeight: 700 }}>{p.dosis_real} {p.dosis_unidad}</span>
                                 </div>
                               ))}
-                            </Link>
-                          );
-                        })}
-                      </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 });
