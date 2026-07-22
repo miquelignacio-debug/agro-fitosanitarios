@@ -66,6 +66,13 @@ function BodegaContent() {
   const [showSalidaVenta,   setShowSalidaVenta]   = useState(false);
   const [salidaVentaSaving, setSalidaVentaSaving] = useState(false);
   const [salidaVentaError,  setSalidaVentaError]  = useState("");
+
+  // Editar movimiento
+  type EditMovForm = { id: string; docNumero: string; proveedor: string };
+  const [editMov,     setEditMov]     = useState<EditMovForm | null>(null);
+  const [editSaving,  setEditSaving]  = useState(false);
+  const [editError,   setEditError]   = useState("");
+  const [catalogProv, setCatalogProv] = useState<string[]>([]);
   const [salidaVentaPrecio, setSalidaVentaPrecio] = useState<number | null>(null);
   const [salidaVentaForm,   setSalidaVentaForm]   = useState<SalidaVentaForm>({
     productoId: "", cantidad: "", tipo: "salida_venta",
@@ -76,7 +83,11 @@ function BodegaContent() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const { data: emp } = await supabase.from("empresas").select("*").order("nombre");
+      const [{ data: emp }, { data: prov }] = await Promise.all([
+        supabase.from("empresas").select("*").order("nombre"),
+        supabase.from("proveedores").select("nombre").eq("activo", true).order("nombre"),
+      ]);
+      setCatalogProv((prov || []).map((r: { nombre: string }) => r.nombre));
       if (!emp || emp.length === 0) return;
       setEmpresas(emp);
       const eid = empresaParam || emp[0].id;
@@ -195,6 +206,33 @@ function BodegaContent() {
     setTransfSaving(false);
     if (r1.error || r2.error) { setTransfError((r1.error || r2.error)!.message); return; }
     setShowTransf(false);
+    await load(empresaId);
+  };
+
+  const openEditMov = (m: StockMovimiento) => {
+    setEditError("");
+    setEditMov({ id: m.id, docNumero: m.documento_numero || "", proveedor: m.proveedor || "" });
+  };
+
+  const handleEditMov = async () => {
+    if (!editMov) return;
+    setEditSaving(true);
+    setEditError("");
+    const { error } = await supabase
+      .from("stock_movimientos")
+      .update({ documento_numero: editMov.docNumero.trim() || null, proveedor: editMov.proveedor.trim() || null })
+      .eq("id", editMov.id);
+    setEditSaving(false);
+    if (error) { setEditError(error.message); return; }
+    // Guardar proveedor en catálogo si es nuevo
+    if (editMov.proveedor.trim()) {
+      await supabase.from("proveedores").upsert(
+        { nombre: editMov.proveedor.trim(), activo: true },
+        { onConflict: "nombre", ignoreDuplicates: true }
+      );
+      setCatalogProv(prev => [...new Set([...prev, editMov.proveedor.trim()])].sort());
+    }
+    setEditMov(null);
     await load(empresaId);
   };
 
@@ -564,6 +602,52 @@ function BodegaContent() {
           </div>
         )}
 
+        {/* Modal editar movimiento */}
+        {editMov && (
+          <div style={modalOverlay}>
+            <div style={{ ...modalBox, width: "420px" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a4731", marginBottom: "16px" }}>
+                Corregir movimiento
+              </h3>
+              <div style={{ display: "grid", gap: "14px" }}>
+                <div>
+                  <label style={lbl}>N° Documento (guía / factura)</label>
+                  <input
+                    value={editMov.docNumero}
+                    onChange={e => setEditMov(f => f && ({ ...f, docNumero: e.target.value }))}
+                    style={minp}
+                    placeholder="Ej. 975392"
+                  />
+                </div>
+                <div>
+                  <label style={lbl}>Proveedor</label>
+                  <input
+                    list="edit-catalog-prov"
+                    value={editMov.proveedor}
+                    onChange={e => setEditMov(f => f && ({ ...f, proveedor: e.target.value }))}
+                    style={minp}
+                    placeholder="Buscar o escribir proveedor..."
+                  />
+                  <datalist id="edit-catalog-prov">
+                    {catalogProv.map(n => <option key={n} value={n} />)}
+                  </datalist>
+                </div>
+                {editError && (
+                  <p style={{ fontSize: "13px", color: "#dc2626", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "8px", padding: "10px 14px", margin: 0 }}>
+                    {editError}
+                  </p>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginTop: "20px", justifyContent: "flex-end" }}>
+                <button onClick={() => setEditMov(null)} style={mCancelBtn}>Cancelar</button>
+                <button onClick={handleEditMov} disabled={editSaving} style={mSaveBtn}>
+                  {editSaving ? "Guardando..." : "Guardar corrección"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <p style={{ color: "#6b7280", marginTop: "20px" }}>Cargando...</p>
         ) : tab === "stock" ? (
@@ -632,7 +716,7 @@ function BodegaContent() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Fecha", "Tipo", "Producto", "Cantidad", "Valor unit.", "Valor total", "Documento", "Origen / OT / Destino", "Notas"].map((h) => (
+                  {["Fecha", "Tipo", "Producto", "Cantidad", "Valor unit.", "Valor total", "Documento", "Origen / OT / Destino", "Notas", ""].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -682,6 +766,17 @@ function BodegaContent() {
                             : "—"}
                     </td>
                     <td style={{ ...td, color: "#6b7280" }}>{m.notas || "—"}</td>
+                    <td style={td}>
+                      {(m.tipo === "entrada" || m.tipo === "ajuste_entrada" || m.tipo === "ajuste_salida") && isAdmin && (
+                        <button
+                          onClick={() => openEditMov(m)}
+                          title="Corregir documento / proveedor"
+                          style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", padding: "2px 4px", color: "#6b7280" }}
+                        >
+                          ✏️
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {movimientos.length === 0 && (

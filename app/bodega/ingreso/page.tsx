@@ -82,6 +82,15 @@ function IngresoContent() {
 
     setSaving(false);
     if (err) { setError(err.message); return; }
+
+    // Guardar proveedor en catálogo para futuros ingresos
+    if (proveedor.trim()) {
+      await supabase.from("proveedores").upsert(
+        { nombre: proveedor.trim(), activo: true },
+        { onConflict: "nombre", ignoreDuplicates: true }
+      );
+    }
+
     setSaved(true);
     setTimeout(() => router.push(`/bodega${selectedEmpresa ? `?empresa=${selectedEmpresa}` : ""}`), 1200);
   };
