@@ -81,7 +81,7 @@ function DashboardContent() {
       .from("ordenes_trabajo")
       .select("*")
       .eq("empresa_id", eid)
-      .in("estado", ["borrador", "emitida"])
+      .in("estado", ["borrador", "emitida", "en_ejecucion"])
       .not("fecha_aplicacion", "is", null)
       .gte("fecha_aplicacion", hoy)
       .lte("fecha_aplicacion", en14dias)
