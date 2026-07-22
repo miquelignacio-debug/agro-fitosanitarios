@@ -31,6 +31,7 @@ type OTParaPDF = OrdenTrabajo & {
       formulacion: string | null;
       especies_autorizadas: string[] | null;
       unidad_dosis?: string | null;
+      unidad_bodega?: "lt" | "kg" | null;
     };
   }[];
 };
