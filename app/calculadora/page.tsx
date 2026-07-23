@@ -92,6 +92,7 @@ function CalculadoraContent() {
   const resultado = useMemo(() => {
     const dosisNum = parseFloat(dosis);
     if (!dosisNum || !productoId) return null;
+    const prefix = dosisUnidad.split("/")[0].toLowerCase();
     const validas: RowResult[] = [];
     for (const r of rows) {
       const sup = parseFloat(r.superficie_ha) || 0;
@@ -106,6 +107,9 @@ function CalculadoraContent() {
       } else {
         continue;
       }
+      // Convertir a unidad de bodega: cc/ml → lt, g → kg
+      if (prefix === "cc" || prefix === "ml") cantidad /= 1000;
+      else if (prefix === "g") cantidad /= 1000;
       validas.push({ cuartel: cuarteles.find(c => c.id === r.cuartel_id), sup, agua: moj > 0 ? sup * moj : 0, cantidad });
     }
     if (!validas.length) return null;
@@ -141,8 +145,9 @@ function CalculadoraContent() {
   const removeRow = (i: number) => setRows(prev => prev.filter((_, idx) => idx !== i));
 
   const fmt = (n: number) =>
-    n >= 1000 ? Math.round(n).toLocaleString("es-CL") : n < 10 ? n.toFixed(2) : n.toFixed(1);
-  const unit              = dosisUnidad.split("/")[0];
+    n >= 1000 ? Math.round(n).toLocaleString("es-CL") : n < 10 ? n.toFixed(3) : n.toFixed(2);
+  const rawPrefix = dosisUnidad.split("/")[0].toLowerCase();
+  const unit = (rawPrefix === "cc" || rawPrefix === "ml") ? "lt" : rawPrefix === "g" ? "kg" : rawPrefix;
   const productoConStock  = productos.filter(p => stockMap.has(p.id));
   const productoSinStock  = productos.filter(p => !stockMap.has(p.id));
   const mostrarAgua       = resultado?.validas.some(r => r.agua > 0);
