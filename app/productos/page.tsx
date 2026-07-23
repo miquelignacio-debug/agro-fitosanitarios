@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useRol } from "@/lib/useRol";
 import type { Producto } from "@/lib/types";
+import { TOXICIDAD_ABEJAS_LABEL, TOXICIDAD_ABEJAS_COLOR } from "@/lib/types";
 
 type EditPrecios = { id: string; nombre: string; precio: string; minimo: string };
 
@@ -130,7 +131,7 @@ export default function ProductosPage() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Producto", "N° Registro", "Ingrediente activo", "Función", "Dosis / unidad", "Carencia (d)", "Reingreso (h)", "Precio costo", "Stock mín.", "Fuente", ""].map((h) => (
+                  {["Producto", "N° Registro", "Ingrediente activo", "Función", "Dosis / unidad", "Carencia (d)", "Reingreso (h)", "Precio costo", "Stock mín.", "Abejas 🐝", "Fuente", ""].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -154,6 +155,21 @@ export default function ProductosPage() {
                     </td>
                     <td style={{ ...td, textAlign: "right", color: p.stock_minimo ? "#374151" : "#d1d5db" }}>
                       {p.stock_minimo != null && p.stock_minimo > 0 ? `${p.stock_minimo} ${p.unidad_dosis || "u"}` : "—"}
+                    </td>
+                    <td style={td}>
+                      {p.toxicidad_abejas ? (
+                        <span style={{
+                          fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "999px",
+                          background: TOXICIDAD_ABEJAS_COLOR[p.toxicidad_abejas] + "18",
+                          color: TOXICIDAD_ABEJAS_COLOR[p.toxicidad_abejas],
+                          border: `1px solid ${TOXICIDAD_ABEJAS_COLOR[p.toxicidad_abejas]}40`,
+                          whiteSpace: "nowrap" as const,
+                        }}>
+                          {TOXICIDAD_ABEJAS_LABEL[p.toxicidad_abejas]}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: "11px", color: "#d1d5db" }}>Sin clasificar</span>
+                      )}
                     </td>
                     <td style={td}>
                       <span style={p.fuente === "sag" ? sagBadge : manualBadge}>

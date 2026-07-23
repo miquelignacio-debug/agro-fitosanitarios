@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
-import { FUNCIONES_FITOSANITARIAS } from "@/lib/types";
+import { FUNCIONES_FITOSANITARIAS, TOXICIDAD_ABEJAS_LABEL, type ToxicidadAbejas } from "@/lib/types";
 import { Suspense } from "react";
 
 const UNIDADES = ["lt/ha", "cc/ha", "kg/ha", "g/ha", "g/100lt", "cc/100lt", "lt/100lt"];
@@ -33,6 +33,7 @@ function EditarProductoContent() {
   const [maxIa, setMaxIa] = useState("");
   const [precioCosto, setPrecioCosto] = useState("");
   const [stockMinimo, setStockMinimo] = useState("");
+  const [toxicidadAbejas, setToxicidadAbejas] = useState<ToxicidadAbejas | "">("");
 
   useEffect(() => {
     const init = async () => {
@@ -61,6 +62,7 @@ function EditarProductoContent() {
       setMaxIa(data.max_ia_descripcion || "");
       setPrecioCosto(data.precio_costo != null ? String(data.precio_costo) : "");
       setStockMinimo(data.stock_minimo != null ? String(data.stock_minimo) : "");
+      setToxicidadAbejas(data.toxicidad_abejas || "");
       setLoading(false);
     };
     init();
@@ -94,6 +96,7 @@ function EditarProductoContent() {
       max_ia_descripcion: maxIa.trim() || null,
       precio_costo: precioCosto ? parseFloat(precioCosto) : null,
       stock_minimo: stockMinimo ? parseFloat(stockMinimo) : 0,
+      toxicidad_abejas: toxicidadAbejas || null,
     }).eq("id", id);
 
     setSaving(false);
@@ -212,6 +215,27 @@ function EditarProductoContent() {
                 <input type="number" min="0" step="0.1" value={stockMinimo} onChange={(e) => setStockMinimo(e.target.value)} style={inputStyle} placeholder="0" />
               </Field>
             </div>
+          </section>
+
+          <section style={section}>
+            <h2 style={sectionTitle}>🐝 Ley Apícola</h2>
+            <Field label="Toxicidad para abejas">
+              <select
+                value={toxicidadAbejas}
+                onChange={(e) => setToxicidadAbejas(e.target.value as ToxicidadAbejas | "")}
+                style={inputStyle}
+              >
+                <option value="">— Sin clasificar —</option>
+                {(Object.entries(TOXICIDAD_ABEJAS_LABEL) as [ToxicidadAbejas, string][]).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
+              </select>
+              {(toxicidadAbejas === "toxico" || toxicidadAbejas === "moderadamente_toxico") && (
+                <p style={{ fontSize: "12px", color: "#d97706", marginTop: "6px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "6px", padding: "6px 10px" }}>
+                  ⚠ Requiere aviso al SAG y apicultores SIPEC con 48h de anticipación.
+                </p>
+              )}
+            </Field>
           </section>
 
           {error && <p style={errorStyle}>{error}</p>}

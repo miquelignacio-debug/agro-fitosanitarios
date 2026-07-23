@@ -60,6 +60,8 @@ export type Maquinaria = {
   created_at: string;
 };
 
+export type ToxicidadAbejas = "toxico" | "moderadamente_toxico" | "poco_toxico" | "no_toxico";
+
 export type Producto = {
   id: string;
   nombre_comercial: string;
@@ -74,11 +76,26 @@ export type Producto = {
   concentracion_ia: string | null;
   unidad_bodega: "lt" | "kg" | null;
   max_ia_descripcion: string | null;
+  toxicidad_abejas: ToxicidadAbejas | null;
   activo: boolean;
   fuente: "sag" | "manual";
   precio_costo: number | null;
   stock_minimo: number | null;
   created_at: string;
+};
+
+export const TOXICIDAD_ABEJAS_LABEL: Record<ToxicidadAbejas, string> = {
+  toxico:               "Tóxico para abejas",
+  moderadamente_toxico: "Moderadamente tóxico",
+  poco_toxico:          "Poco tóxico",
+  no_toxico:            "No tóxico",
+};
+
+export const TOXICIDAD_ABEJAS_COLOR: Record<ToxicidadAbejas, string> = {
+  toxico:               "#dc2626",
+  moderadamente_toxico: "#d97706",
+  poco_toxico:          "#ca8a04",
+  no_toxico:            "#15803d",
 };
 
 export type StockMovimiento = {
