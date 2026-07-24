@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useRol } from "@/lib/useRol";
 import { useEmpresa } from "@/lib/useEmpresa";
+import { useCampo } from "@/lib/useCampo";
 import type { OrdenTrabajo } from "@/lib/types";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
 
@@ -18,6 +19,7 @@ function OrdenesContent() {
   const router = useRouter();
   const { isAdmin, isEncargado } = useRol();
   const { empresaId, empresaNombre } = useEmpresa();
+  const { campoId, campoNombre } = useCampo();
 
   const [ordenes, setOrdenes] = useState<OTConCuarteles[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,14 +33,15 @@ function OrdenesContent() {
       await load(empresaId);
     };
     init();
-  }, [empresaId]);
+  }, [empresaId, campoId]);
 
   const load = async (eid: string) => {
     setLoading(true);
-    const { data } = await supabase
+    const base = supabase
       .from("ordenes_trabajo")
       .select("*, ot_cuarteles(cuartel:cuarteles(codigo))")
-      .eq("empresa_id", eid)
+      .eq("empresa_id", eid);
+    const { data } = await (campoId ? base.eq("campo_id", campoId) : base)
       .order("numero", { ascending: false });
     setOrdenes((data as OTConCuarteles[]) || []);
     setLoading(false);
@@ -54,7 +57,7 @@ function OrdenesContent() {
       <main style={container}>
         <div style={pageHeader}>
           <div>
-            <h1 style={pageTitle}>Órdenes de Trabajo — {empresaNombre}</h1>
+            <h1 style={pageTitle}>Órdenes de Trabajo — {campoNombre || empresaNombre}</h1>
             <p style={pageSubtitle}>{ordenes.length} órdenes registradas</p>
           </div>
           {(isAdmin || isEncargado) && (

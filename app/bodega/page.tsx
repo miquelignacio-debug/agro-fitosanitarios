@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useRol } from "@/lib/useRol";
 import { useEmpresa } from "@/lib/useEmpresa";
+import { useCampo } from "@/lib/useCampo";
 import type { Empresa, StockMovimiento, Producto } from "@/lib/types";
 
 type StockRow = {
@@ -43,6 +44,7 @@ type SalidaVentaForm = {
 function BodegaContent() {
   const router = useRouter();
   const { empresaId, empresaNombre } = useEmpresa();
+  const { campoId } = useCampo();
   const { isAdmin, isEncargado } = useRol();
   const showPrecios = isAdmin;
 
@@ -93,7 +95,7 @@ function BodegaContent() {
       await load(empresaId);
     };
     init();
-  }, [empresaId]);
+  }, [empresaId, campoId]);
 
   const load = async (eid: string) => {
     setLoading(true);
@@ -103,12 +105,10 @@ function BodegaContent() {
         .select("*, producto:productos(*)")
         .eq("empresa_id", eid)
         .order("producto_id", { ascending: true }),
-      supabase
-        .from("stock_movimientos")
-        .select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*)")
-        .eq("empresa_id", eid)
-        .order("fecha", { ascending: false })
-        .limit(200),
+      (campoId
+        ? supabase.from("stock_movimientos").select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*)").eq("empresa_id", eid).eq("campo_id", campoId)
+        : supabase.from("stock_movimientos").select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*)").eq("empresa_id", eid)
+      ).order("fecha", { ascending: false }).limit(200),
     ]);
 
     // Cargar números de OT por separado (ot_id no tiene FK explícito, el join inline falla)

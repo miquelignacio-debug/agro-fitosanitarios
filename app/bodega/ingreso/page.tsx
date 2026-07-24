@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useEmpresa } from "@/lib/useEmpresa";
+import { useCampo } from "@/lib/useCampo";
 import type { Producto, Usuario } from "@/lib/types";
 
 import { Suspense } from "react";
 function IngresoContent() {
   const router = useRouter();
   const { empresaId } = useEmpresa();
+  const { campoId } = useCampo();
 
   const [productos, setProductos] = useState<Producto[]>([]);
   const [usuario, setUsuario] = useState<Usuario | null>(null);
@@ -62,6 +64,7 @@ function IngresoContent() {
     setSaving(true);
     const { error: err } = await supabase.from("stock_movimientos").insert({
       empresa_id: empresaId,
+      campo_id: campoId,
       producto_id: productoId,
       tipo: "entrada",
       cantidad: parseFloat(cantidad),

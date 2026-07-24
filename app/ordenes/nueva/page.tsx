@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useEmpresa } from "@/lib/useEmpresa";
+import { useCampo } from "@/lib/useCampo";
 import type { Cuartel, Maquinaria, Producto, Personal } from "@/lib/types";
 import { FUNCIONES_FITOSANITARIAS } from "@/lib/types";
 
@@ -40,6 +41,7 @@ function NuevaOTContent() {
 
   // Cabecera
   const { empresaId: empresa } = useEmpresa();
+  const { campoId } = useCampo();
   const [fechaSolicitud,    setFechaSolicitud]     = useState(new Date().toISOString().slice(0, 10));
   const [fechaAplicacion,   setFechaAplicacion]   = useState("");
   const [horaInicio,        setHoraInicio]         = useState("05:00");
@@ -155,7 +157,7 @@ function NuevaOTContent() {
   }, [empresa]);
 
   // ── Computed ───────────────────────────────────────────────────────────────
-  const cuartelesPorEmpresa  = cuarteles.filter(c => c.empresa_id === empresa);
+  const cuartelesPorEmpresa  = cuarteles.filter(c => c.empresa_id === empresa && (!campoId || c.campo_id === campoId));
   const [especieFilter, setEspecieFilter] = useState("");
   const especiesDisponibles = Array.from(new Set(cuartelesPorEmpresa.map(c => c.especie))).sort();
   const cuartelesFiltrados  = especieFilter
@@ -334,6 +336,7 @@ function NuevaOTContent() {
     const { data: ot, error: otErr } = await supabase.from("ordenes_trabajo").insert({
       numero,
       empresa_id: empresa,
+      campo_id: campoId,
       fecha_solicitud: fechaSolicitud,
       fecha_aplicacion: fechaAplicacion || null,
       hora_inicio: horaInicio || null,

@@ -7,6 +7,7 @@ import { supabase } from "./supabaseClient";
 import { useRouter } from "next/navigation";
 import { useRol } from "./useRol";
 import { useEmpresa } from "./useEmpresa";
+import { useCampo } from "./useCampo";
 
 const NAV_LINKS = [
   { href: "/dashboard",   label: "Inicio" },
@@ -27,9 +28,12 @@ function NavContent() {
   const [borradoresCount, setBorradoresCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
+  const [campoSelectorOpen, setCampoSelectorOpen] = useState(false);
   const [userNombre, setUserNombre] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const selectorRef = useRef<HTMLDivElement>(null);
+  const campoSelectorRef = useRef<HTMLDivElement>(null);
+  const { campoId, campoNombre, allCampos, switchCampo } = useCampo();
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -52,17 +56,16 @@ function NavContent() {
 
   useEffect(() => { setMenuOpen(false); setSelectorOpen(false); }, [pathname]);
 
-  // Cerrar selector al hacer click fuera
+  // Cerrar selectores al hacer click fuera
   useEffect(() => {
-    if (!selectorOpen) return;
+    if (!selectorOpen && !campoSelectorOpen) return;
     const handler = (e: MouseEvent) => {
-      if (selectorRef.current && !selectorRef.current.contains(e.target as Node)) {
-        setSelectorOpen(false);
-      }
+      if (selectorRef.current && !selectorRef.current.contains(e.target as Node)) setSelectorOpen(false);
+      if (campoSelectorRef.current && !campoSelectorRef.current.contains(e.target as Node)) setCampoSelectorOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [selectorOpen]);
+  }, [selectorOpen, campoSelectorOpen]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -128,6 +131,44 @@ function NavContent() {
                     {userEmail}
                   </span>
                 </div>
+              </div>
+            )}
+
+            {/* Selector campo (todos los usuarios con más de un campo) */}
+            {allCampos.length > 1 && (
+              <div ref={campoSelectorRef} style={{ position: "relative" }}>
+                <button
+                  onClick={() => setCampoSelectorOpen(o => !o)}
+                  style={campoSelectorBtn}
+                >
+                  <span style={{ fontSize: "11px", opacity: 0.75, marginRight: "4px" }}>🌾</span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "110px" }}>
+                    {campoNombre || "Campo"}
+                  </span>
+                  <span style={{ marginLeft: "6px", fontSize: "10px", opacity: 0.7 }}>
+                    {campoSelectorOpen ? "▲" : "▼"}
+                  </span>
+                </button>
+                {campoSelectorOpen && (
+                  <div style={dropdownList}>
+                    {allCampos.map(c => (
+                      <button
+                        key={c.id}
+                        className="empresa-option"
+                        onClick={() => { switchCampo(c.id); setCampoSelectorOpen(false); }}
+                        style={{
+                          ...dropdownItem,
+                          background: c.id === campoId ? "#e8f5ee" : "#fff",
+                          color: c.id === campoId ? "#1a4731" : "#374151",
+                          fontWeight: c.id === campoId ? 700 : 500,
+                        }}
+                      >
+                        {c.id === campoId && <span style={{ marginRight: "6px", color: "#1a4731" }}>✓</span>}
+                        {c.nombre}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -207,6 +248,26 @@ function NavContent() {
               </Link>
             );
           })}
+          {allCampos.length > 1 && (
+            <div style={{ padding: "8px 16px" }}>
+              <div style={{ fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px", paddingLeft: "4px" }}>Campo</div>
+              {allCampos.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => { switchCampo(c.id); setMenuOpen(false); }}
+                  style={{
+                    display: "block", width: "100%", textAlign: "left",
+                    padding: "8px 12px", marginBottom: "4px", borderRadius: "8px",
+                    border: "none", cursor: "pointer",
+                    background: c.id === campoId ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.07)",
+                    color: "#fff", fontSize: "13px", fontWeight: c.id === campoId ? 700 : 500,
+                  }}
+                >
+                  {c.id === campoId ? "✓ " : ""}{c.nombre}
+                </button>
+              ))}
+            </div>
+          )}
           {isSuperAdmin && allEmpresas.length > 1 && (
             <div style={{ padding: "8px 16px" }}>
               {allEmpresas.map(e => (
@@ -382,6 +443,19 @@ const userAvatar: React.CSSProperties = {
   fontSize: "11px",
   fontWeight: 800,
   flexShrink: 0,
+};
+const campoSelectorBtn: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  background: "rgba(255,255,255,0.08)",
+  border: "1px solid rgba(255,255,255,0.2)",
+  color: "#fff",
+  padding: "5px 10px",
+  borderRadius: "8px",
+  fontSize: "12px",
+  fontWeight: 600,
+  cursor: "pointer",
+  maxWidth: "160px",
 };
 const empresaSelectorBtn: React.CSSProperties = {
   display: "flex",

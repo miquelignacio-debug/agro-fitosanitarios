@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useRol } from "@/lib/useRol";
 import { useEmpresa } from "@/lib/useEmpresa";
+import { useCampo } from "@/lib/useCampo";
 import type { OrdenTrabajo, StockActual } from "@/lib/types";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
 import { Suspense } from "react";
@@ -44,6 +45,7 @@ type Costo = {
 function DashboardContent() {
   const router = useRouter();
   const { empresaId, empresaNombre } = useEmpresa();
+  const { campoId, campoNombre } = useCampo();
   const { isAdmin, isEncargado } = useRol();
 
   const [ordenes, setOrdenes] = useState<OrdenTrabajo[]>([]);
@@ -63,7 +65,7 @@ function DashboardContent() {
       await loadData(empresaId);
     };
     init();
-  }, [empresaId]);
+  }, [empresaId, campoId]);
 
   const loadData = async (eid: string) => {
     setLoading(true);
@@ -79,49 +81,36 @@ function DashboardContent() {
     const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`;
     const fin = new Date(ahora); fin.setDate(fin.getDate() + 14);
     const en14dias = `${fin.getFullYear()}-${String(fin.getMonth()+1).padStart(2,'0')}-${String(fin.getDate()).padStart(2,'0')}`;
-    const { data } = await supabase
+    const baseP = supabase
       .from("ordenes_trabajo")
       .select(`*, ot_cuarteles(superficie_ha, cuartel:cuarteles(codigo)), ot_productos(dosis_real, dosis_unidad, producto:productos(nombre_comercial)), ot_aplicadores(cantidad_maquinadas, personal:personal!personal_id(nombre), operador:operadores(nombre))`)
       .eq("empresa_id", eid)
       .in("estado", ["borrador", "emitida", "en_ejecucion"])
       .not("fecha_aplicacion", "is", null)
       .gte("fecha_aplicacion", hoyStr)
-      .lte("fecha_aplicacion", en14dias)
+      .lte("fecha_aplicacion", en14dias);
+    const { data } = await (campoId ? baseP.eq("campo_id", campoId) : baseP)
       .order("fecha_aplicacion", { ascending: true })
       .limit(20);
     setProximas((data as ProximaOT[]) || []);
   };
 
   const loadBorradores = async (eid: string) => {
-    const { data } = await supabase
-      .from("ordenes_trabajo")
-      .select("*, ot_cuarteles(cuartel:cuarteles(codigo))")
-      .eq("empresa_id", eid)
-      .eq("estado", "borrador")
-      .order("created_at", { ascending: false })
-      .limit(6);
+    const baseB = supabase.from("ordenes_trabajo").select("*, ot_cuarteles(cuartel:cuarteles(codigo))").eq("empresa_id", eid).eq("estado", "borrador");
+    const { data } = await (campoId ? baseB.eq("campo_id", campoId) : baseB).order("created_at", { ascending: false }).limit(6);
     setBorradores((data as BorradorOT[]) || []);
   };
 
   const loadKpiFinalizadas = async (eid: string) => {
     const year = new Date().getFullYear();
-    const { count } = await supabase
-      .from("ordenes_trabajo")
-      .select("*", { count: "exact", head: true })
-      .eq("empresa_id", eid)
-      .eq("estado", "finalizada")
-      .gte("fecha_aplicacion", `${year}-01-01`);
+    const baseK = supabase.from("ordenes_trabajo").select("*", { count: "exact", head: true }).eq("empresa_id", eid).eq("estado", "finalizada").gte("fecha_aplicacion", `${year}-01-01`);
+    const { count } = await (campoId ? baseK.eq("campo_id", campoId) : baseK);
     setKpiFinalizadas(count ?? 0);
   };
 
   const loadOrdenes = async (eid: string) => {
-    const { data } = await supabase
-      .from("ordenes_trabajo")
-      .select("*")
-      .eq("empresa_id", eid)
-      .in("estado", ["emitida", "en_ejecucion"])
-      .order("fecha_solicitud", { ascending: false })
-      .limit(8);
+    const baseO = supabase.from("ordenes_trabajo").select("*").eq("empresa_id", eid).in("estado", ["emitida", "en_ejecucion"]);
+    const { data } = await (campoId ? baseO.eq("campo_id", campoId) : baseO).order("fecha_solicitud", { ascending: false }).limit(8);
     setOrdenes((data as OrdenTrabajo[]) || []);
   };
 
@@ -139,16 +128,8 @@ function DashboardContent() {
 
   const loadCarencias = async (eid: string) => {
     const hoy = new Date().toISOString().slice(0, 10);
-    const { data } = await supabase
-      .from("ordenes_trabajo")
-      .select(`
-        plagas_objetivo,
-        ot_cuarteles(cuartel:cuarteles(codigo, especie, variedad)),
-        ot_productos(fecha_viable, carencia_dias, producto:productos(nombre_comercial))
-      `)
-      .eq("empresa_id", eid)
-      .eq("estado", "finalizada")
-      .gte("fecha_aplicacion", new Date(Date.now() - 180 * 86400 * 1000).toISOString().slice(0, 10));
+    const baseC = supabase.from("ordenes_trabajo").select(`plagas_objetivo, ot_cuarteles(cuartel:cuarteles(codigo, especie, variedad)), ot_productos(fecha_viable, carencia_dias, producto:productos(nombre_comercial))`).eq("empresa_id", eid).eq("estado", "finalizada").gte("fecha_aplicacion", new Date(Date.now() - 180 * 86400 * 1000).toISOString().slice(0, 10));
+    const { data } = await (campoId ? baseC.eq("campo_id", campoId) : baseC);
 
     if (!data) return;
 
@@ -195,15 +176,8 @@ function DashboardContent() {
     const anoActual = new Date().getFullYear();
     const desde = `${anoActual}-01-01`;
 
-    const { data } = await supabase
-      .from("ordenes_trabajo")
-      .select(`
-        ot_cuarteles(superficie_ha),
-        ot_productos(consumo_total, dosis_unidad, producto:productos(nombre_comercial, precio_costo))
-      `)
-      .eq("empresa_id", eid)
-      .eq("estado", "finalizada")
-      .gte("fecha_aplicacion", desde);
+    const baseCo = supabase.from("ordenes_trabajo").select(`ot_cuarteles(superficie_ha), ot_productos(consumo_total, dosis_unidad, producto:productos(nombre_comercial, precio_costo))`).eq("empresa_id", eid).eq("estado", "finalizada").gte("fecha_aplicacion", desde);
+    const { data } = await (campoId ? baseCo.eq("campo_id", campoId) : baseCo);
 
     if (!data) return;
 
@@ -251,7 +225,7 @@ function DashboardContent() {
       <main style={container}>
         <div style={pageHeader}>
           <div>
-            <h1 style={pageTitle}>{empresaNombre || "—"}</h1>
+            <h1 style={pageTitle}>{campoNombre || empresaNombre || "—"}</h1>
             <p style={pageSubtitle}>Panel de gestión fitosanitaria</p>
           </div>
           {(isAdmin || isEncargado) && (

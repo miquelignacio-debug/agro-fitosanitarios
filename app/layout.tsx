@@ -3,6 +3,7 @@ import "./globals.css";
 import SWRegister from "@/lib/SWRegister";
 import InstallPrompt from "@/lib/InstallPrompt";
 import { EmpresaProvider } from "@/lib/useEmpresa";
+import { CampoProvider } from "@/lib/useCampo";
 
 export const metadata: Metadata = {
   title: "Agro Fitosanitarios",
@@ -28,7 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <body>
         <EmpresaProvider>
-          {children}
+          <CampoProvider>
+            {children}
+          </CampoProvider>
         </EmpresaProvider>
         <SWRegister />
         <InstallPrompt />

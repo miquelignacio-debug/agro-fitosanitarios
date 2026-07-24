@@ -30,6 +30,7 @@ export type Cuartel = {
   superficie_real: number | null;
   hileras: number | null;
   activo: boolean;
+  campo_id: string | null;
   created_at: string;
 };
 

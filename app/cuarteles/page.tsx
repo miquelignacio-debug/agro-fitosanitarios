@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useEmpresa } from "@/lib/useEmpresa";
+import { useCampo } from "@/lib/useCampo";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
 import type { Cuartel, OrdenTrabajo } from "@/lib/types";
 
@@ -15,6 +16,7 @@ type HistorialOT = Pick<OrdenTrabajo, "id" | "numero" | "fecha_aplicacion" | "fe
 function CuartelesContent() {
   const router = useRouter();
   const { empresaId, empresaNombre } = useEmpresa();
+  const { campoId, campoNombre, allCampos } = useCampo();
 
   const [cuarteles, setCuarteles] = useState<Cuartel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,15 +36,12 @@ function CuartelesContent() {
       await load(empresaId);
     };
     init();
-  }, [empresaId]);
+  }, [empresaId, campoId]);
 
   const load = async (eid: string) => {
     setLoading(true);
-    const { data } = await supabase
-      .from("cuarteles")
-      .select("*")
-      .eq("empresa_id", eid)
-      .order("codigo");
+    const base = supabase.from("cuarteles").select("*").eq("empresa_id", eid);
+    const { data } = await (campoId ? base.eq("campo_id", campoId) : base).order("codigo");
     setCuarteles((data as Cuartel[]) || []);
     setLoading(false);
   };
@@ -64,6 +63,7 @@ function CuartelesContent() {
         superficie_real: editing.superficie_real,
         hileras: editing.hileras,
         activo: editing.activo,
+        campo_id: editing.campo_id ?? null,
       })
       .eq("id", editing.id);
     if (err) { setError(err.message); }
@@ -109,7 +109,7 @@ function CuartelesContent() {
       <main style={container}>
         <div style={pageHeader}>
           <div>
-            <h1 style={pageTitle}>Cuarteles — {empresaNombre}</h1>
+            <h1 style={pageTitle}>Cuarteles — {campoNombre || empresaNombre}</h1>
             <p style={pageSubtitle}>{cuarteles.filter((c) => c.activo).length} cuarteles activos</p>
           </div>
           <input
@@ -255,6 +255,21 @@ function CuartelesContent() {
                     <option value="false">No</option>
                   </select>
                 </div>
+                {allCampos.length > 0 && (
+                  <div style={formField}>
+                    <label style={labelStyle}>Campo</label>
+                    <select
+                      value={editing.campo_id ?? ""}
+                      onChange={(e) => setEditing({ ...editing, campo_id: e.target.value || null })}
+                      style={inputStyle}
+                    >
+                      <option value="">Sin campo</option>
+                      {allCampos.map(c => (
+                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
               {error && <p style={{ color: "#dc2626", fontSize: "13px", marginTop: "10px" }}>{error}</p>}
               <div style={modalFooter}>
