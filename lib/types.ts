@@ -139,6 +139,7 @@ export type OrdenTrabajo = {
   id: string;
   numero: number;
   empresa_id: string;
+  campo_id: string | null;
   campo: string | null;
   fecha_solicitud: string;
   fecha_aplicacion: string | null;

@@ -261,17 +261,18 @@ function OTDetalleContent() {
     // (así si salida_barbecho falla por constraint, los movimientos campo igual quedan registrados)
     const fecha = ot.fecha_aplicacion || new Date().toISOString().slice(0, 10);
 
-    // Calcular costo promedio ponderado por producto (suma(cantidad*precio) / suma(cantidad) de todas las entradas con precio)
+    // Calcular costo promedio ponderado por producto a nivel campo (suma(cantidad*precio) / suma(cantidad))
     const productoIds = [...new Set(consumos.map(c => c.p.producto_id))];
     const costoPromedio: Record<string, number> = {};
     if (productoIds.length > 0) {
-      const { data: entradas } = await supabase
+      const base = supabase
         .from("stock_movimientos")
         .select("producto_id, cantidad, precio_unitario")
         .eq("empresa_id", ot.empresa_id)
         .eq("tipo", "entrada")
         .in("producto_id", productoIds)
         .not("precio_unitario", "is", null);
+      const { data: entradas } = await (ot.campo_id ? base.eq("campo_id", ot.campo_id) : base);
       if (entradas) {
         for (const pid of productoIds) {
           const movs = entradas.filter((m: { producto_id: string; cantidad: number; precio_unitario: number }) => m.producto_id === pid);
