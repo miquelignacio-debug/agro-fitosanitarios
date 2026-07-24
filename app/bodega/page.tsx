@@ -41,6 +41,8 @@ type SalidaVentaForm = {
   fecha: string;
 };
 
+const TIPOS_SUMA = new Set(["entrada", "transferencia_entrada", "ajuste_entrada"]);
+
 function BodegaContent() {
   const router = useRouter();
   const { empresaId, empresaNombre } = useEmpresa();
@@ -75,6 +77,9 @@ function BodegaContent() {
   const [editSaving,  setEditSaving]  = useState(false);
   const [editError,   setEditError]   = useState("");
   const [catalogProv, setCatalogProv] = useState<string[]>([]);
+  const [movSearch, setMovSearch] = useState("");
+  const [movDesde,  setMovDesde]  = useState("");
+  const [movHasta,  setMovHasta]  = useState("");
   const [salidaVentaPrecio, setSalidaVentaPrecio] = useState<number | null>(null);
   const [salidaVentaForm,   setSalidaVentaForm]   = useState<SalidaVentaForm>({
     productoId: "", cantidad: "", tipo: "salida_venta",
@@ -99,17 +104,40 @@ function BodegaContent() {
 
   const load = async (eid: string) => {
     setLoading(true);
-    const [{ data: st }, { data: mv }] = await Promise.all([
-      supabase
-        .from("stock_actual")
-        .select("*, producto:productos(*)")
-        .eq("empresa_id", eid)
-        .order("producto_id", { ascending: true }),
-      (campoId
-        ? supabase.from("stock_movimientos").select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*)").eq("empresa_id", eid).eq("campo_id", campoId)
-        : supabase.from("stock_movimientos").select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*)").eq("empresa_id", eid)
-      ).order("fecha", { ascending: false }).limit(200),
+
+    // Aggregate campo-specific stock from ALL movimientos (not the empresa-level view)
+    const baseAgg = supabase
+      .from("stock_movimientos")
+      .select("producto_id, tipo, cantidad, producto:productos(*)")
+      .eq("empresa_id", eid);
+
+    const baseMv = supabase
+      .from("stock_movimientos")
+      .select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*)")
+      .eq("empresa_id", eid);
+
+    const [{ data: aggData }, { data: mv }] = await Promise.all([
+      (campoId ? baseAgg.eq("campo_id", campoId) : baseAgg),
+      (campoId ? baseMv.eq("campo_id", campoId) : baseMv)
+        .order("fecha", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(500),
     ]);
+
+    // Build campo-specific stock from aggregated movements
+    const stockMap = new Map<string, StockRow>();
+    for (const m of (aggData ?? []) as unknown as { producto_id: string; tipo: string; cantidad: number; producto: Producto }[]) {
+      const sign = TIPOS_SUMA.has(m.tipo) ? 1 : -1;
+      const prev = stockMap.get(m.producto_id);
+      if (prev) {
+        prev.cantidad_disponible += sign * m.cantidad;
+      } else {
+        stockMap.set(m.producto_id, { producto_id: m.producto_id, producto: m.producto, cantidad_disponible: sign * m.cantidad });
+      }
+    }
+    const stockRows = [...stockMap.values()].sort((a, b) =>
+      a.producto.nombre_comercial.localeCompare(b.producto.nombre_comercial)
+    );
 
     // Cargar números de OT por separado (ot_id no tiene FK explícito, el join inline falla)
     const rawMv = (mv as StockMovimiento[]) || [];
@@ -125,7 +153,7 @@ function BodegaContent() {
       ot: m.ot_id ? { id: m.ot_id, numero: otMap[m.ot_id] } : undefined,
     }));
 
-    setStock((st as StockRow[]) || []);
+    setStock(stockRows);
     setMovimientos(mvsConOt as StockMovimiento[]);
     setLoading(false);
   };
@@ -145,6 +173,23 @@ function BodegaContent() {
     const matchBajo    = !stockBajo    || esBajoStock(s);
     return matchSearch && matchFuncion && matchBajo;
   });
+
+  const movsFiltrados = movimientos.filter(m => {
+    const matchProd  = !movSearch || m.producto?.nombre_comercial?.toLowerCase().includes(movSearch.toLowerCase());
+    const matchDesde = !movDesde  || m.fecha >= movDesde;
+    const matchHasta = !movHasta  || m.fecha <= movHasta;
+    return matchProd && matchDesde && matchHasta;
+  });
+
+  // Running stock balance per product, computed backwards from current campo stock
+  const runningBal = new Map<string, number>(stock.map(s => [s.producto_id, Number(s.cantidad_disponible)]));
+  const stockFinalMap = new Map<string, number>();
+  for (const m of movimientos) {
+    const pid = m.producto_id;
+    const curr = runningBal.get(pid) ?? 0;
+    stockFinalMap.set(m.id, curr);
+    runningBal.set(pid, curr + (TIPOS_SUMA.has(m.tipo) ? -Number(m.cantidad) : Number(m.cantidad)));
+  }
 
   const openTransf = async () => {
     const otrosCampos = allCampos.filter(c => c.id !== campoId);
@@ -688,11 +733,43 @@ function BodegaContent() {
             </div>
           </>
         ) : (
+          <>
+          <div style={{ display: "flex", gap: "10px", marginBottom: "14px", flexWrap: "wrap", alignItems: "center" }}>
+            <input
+              placeholder="Buscar producto..."
+              value={movSearch}
+              onChange={e => setMovSearch(e.target.value)}
+              style={filterInput}
+            />
+            <input
+              type="date" title="Desde"
+              value={movDesde}
+              onChange={e => setMovDesde(e.target.value)}
+              style={{ ...filterInput, minWidth: "140px" }}
+            />
+            <input
+              type="date" title="Hasta"
+              value={movHasta}
+              onChange={e => setMovHasta(e.target.value)}
+              style={{ ...filterInput, minWidth: "140px" }}
+            />
+            {(movSearch || movDesde || movHasta) && (
+              <>
+                <span style={{ fontSize: "12px", color: "#6b7280" }}>{movsFiltrados.length} / {movimientos.length}</span>
+                <button
+                  onClick={() => { setMovSearch(""); setMovDesde(""); setMovHasta(""); }}
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: "12px", color: "#6b7280" }}
+                >
+                  ✕ Limpiar filtros
+                </button>
+              </>
+            )}
+          </div>
           <div style={{ overflowX: "auto" }}>
             <table style={table}>
               <thead>
                 <tr>
-                  {["Fecha", "Tipo", "Producto", "Cantidad",
+                  {["Fecha", "Tipo", "Producto", "Cantidad", "Stock final",
                     ...(showPrecios ? ["Valor unit.", "Valor total"] : []),
                     "Documento", "Origen / OT / Destino", "Notas", ""].map((h) => (
                     <th key={h} style={th}>{h}</th>
@@ -700,7 +777,7 @@ function BodegaContent() {
                 </tr>
               </thead>
               <tbody>
-                {movimientos.map((m) => (
+                {movsFiltrados.map((m) => (
                   <tr key={m.id}>
                     <td style={{ ...td, whiteSpace: "nowrap" }}>{m.fecha}</td>
                     <td style={td}>
@@ -711,6 +788,11 @@ function BodegaContent() {
                     <td style={{ ...td, fontWeight: 600 }}>{m.producto?.nombre_comercial || "—"}</td>
                     <td style={{ ...td, textAlign: "right" }}>
                       {m.tipo.includes("salida") ? "-" : "+"}{Number(m.cantidad).toFixed(3)} {m.unidad}
+                    </td>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 600, color: (stockFinalMap.get(m.id) ?? 0) < 0 ? "#dc2626" : "#15803d" }}>
+                      {stockFinalMap.has(m.id)
+                        ? displayStock(stockFinalMap.get(m.id) ?? 0, m.producto?.unidad_bodega ?? null)
+                        : "—"}
                     </td>
                     {showPrecios && (
                       <td style={{ ...td, textAlign: "right", color: "#6b7280" }}>
@@ -761,21 +843,22 @@ function BodegaContent() {
                     </td>
                   </tr>
                 ))}
-                {movimientos.length === 0 && (
+                {movsFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={showPrecios ? 9 : 7} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
-                      Sin movimientos registrados.
+                    <td colSpan={showPrecios ? 10 : 8} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
+                      {movimientos.length === 0 ? "Sin movimientos registrados." : "Sin resultados con los filtros aplicados."}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
-            {movimientos.length >= 200 && (
+            {movimientos.length >= 500 && (
               <p style={{ fontSize: "12px", color: "#d97706", padding: "10px 14px", background: "#fffbeb", borderTop: "1px solid #fcd34d" }}>
-                ⚠ Mostrando los últimos 200 movimientos. El historial completo está disponible en la base de datos.
+                ⚠ Mostrando los últimos 500 movimientos. El historial completo está disponible en la base de datos.
               </p>
             )}
           </div>
+          </>
         )}
       </main>
     </>
