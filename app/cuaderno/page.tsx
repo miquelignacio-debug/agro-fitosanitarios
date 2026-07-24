@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
+import { useEmpresa } from "@/lib/useEmpresa";
 import { generateSAGPdf } from "@/lib/generateSAGPdf";
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -141,8 +141,7 @@ function flattenOTs(ots: OTRaw[]): Fila[] {
 // ── Componente principal ───────────────────────────────────────────────────────
 
 function CuadernoContent() {
-  const searchParams = useSearchParams();
-  const empresa = searchParams.get("empresa") || "";
+  const { empresaId } = useEmpresa();
 
   const [filas, setFilas] = useState<Fila[]>([]);
   const [loading, setLoading] = useState(true);
@@ -157,9 +156,9 @@ function CuadernoContent() {
   const [soloFinalizadas, setSoloFinalizadas] = useState(false);
 
   useEffect(() => {
-    if (!empresa) { setLoading(false); return; }
+    if (!empresaId) { setLoading(false); return; }
     load(desde, hasta);
-  }, [empresa, desde, hasta]);
+  }, [empresaId, desde, hasta]);
 
   const BASE_SELECT = `
     id, numero, estado, fecha_aplicacion, mojamiento_real_ltha, viento_kmh, temperatura_c, plagas_objetivo, objetivo_principal,
@@ -186,7 +185,7 @@ function CuadernoContent() {
       let query = supabase
         .from("ordenes_trabajo")
         .select(sel)
-        .eq("empresa_id", empresa)
+        .eq("empresa_id", empresaId)
         .neq("estado", "anulada")
         .order("fecha_aplicacion", { ascending: false });
       if (fechaDesde) query = query.gte("fecha_aplicacion", fechaDesde);
@@ -275,7 +274,7 @@ function CuadernoContent() {
 
   return (
     <>
-      <Nav empresaId={empresa} />
+      <Nav />
       <main style={container}>
 
         {/* Header */}
@@ -368,7 +367,7 @@ function CuadernoContent() {
           )}
         </div>
 
-        {!empresa && (
+        {!empresaId && (
           <div style={emptyMsg}>Seleccioná una empresa en el selector del nav para ver el cuaderno.</div>
         )}
 
@@ -378,7 +377,7 @@ function CuadernoContent() {
           <div style={emptyMsg}>Cargando datos...</div>
         )}
 
-        {!loading && !error && empresa && filtered.length === 0 && (
+        {!loading && !error && empresaId && filtered.length === 0 && (
           <div style={emptyMsg}>Sin datos para los filtros aplicados.</div>
         )}
 

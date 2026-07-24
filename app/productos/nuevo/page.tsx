@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { FUNCIONES_FITOSANITARIAS } from "@/lib/types";
@@ -11,8 +11,6 @@ const UNIDADES = ["lt/ha", "cc/ha", "kg/ha", "g/ha", "g/100lt", "cc/100lt", "lt/
 import { Suspense } from "react";
 function NuevoProductoContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const empresa = searchParams.get("empresa") || "";
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -61,12 +59,12 @@ function NuevoProductoContent() {
 
     setSaving(false);
     if (err) { setError(err.message); return; }
-    router.push(`/productos${empresa ? `?empresa=${empresa}` : ""}`);
+    router.push("/productos");
   };
 
   return (
     <>
-      <Nav empresaId={empresa} />
+      <Nav />
       <main style={container}>
         <div style={pageHeader}>
           <div>
@@ -156,7 +154,7 @@ function NuevoProductoContent() {
           <div style={footer}>
             <button
               type="button"
-              onClick={() => router.push(`/productos${empresa ? `?empresa=${empresa}` : ""}`)}
+              onClick={() => router.push("/productos")}
               style={cancelBtn}
             >
               Cancelar

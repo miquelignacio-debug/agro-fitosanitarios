@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
-import type { Empresa, Producto } from "@/lib/types";
+import { useEmpresa } from "@/lib/useEmpresa";
+import type { Producto } from "@/lib/types";
 import { Suspense } from "react";
 
 // ── Types ────────────────────────────────────────────────────────
@@ -79,11 +80,8 @@ function calcCostosPromedios(movimientos: MovBase[]): Record<string, number | nu
 
 function InventarioContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const empresaParam = searchParams.get("empresa") || "";
+  const { empresaId, empresaNombre } = useEmpresa();
 
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [empresaId, setEmpresaId] = useState(empresaParam);
   const [tab, setTab] = useState<"nueva" | "historial">("nueva");
 
   // Step state
@@ -117,15 +115,11 @@ function InventarioContent() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const { data: emp } = await supabase.from("empresas").select("*").order("nombre");
-      if (!emp?.length) return;
-      setEmpresas(emp);
-      const eid = empresaParam || emp[0].id;
-      setEmpresaId(eid);
-      await loadStock(eid);
+      if (!empresaId) return;
+      await loadStock(empresaId);
     };
     init();
-  }, [empresaParam]);
+  }, [empresaId]);
 
   const loadStock = async (eid: string) => {
     setLoading(true);
@@ -392,37 +386,20 @@ function InventarioContent() {
     return sum + (l.costo_promedio != null ? diff * l.costo_promedio : 0);
   }, 0);
 
-  const empresa = empresas.find((e) => e.id === empresaId);
-
   return (
     <>
-      <Nav empresaId={empresaId} />
+      <Nav />
       <main style={container}>
         {/* Header */}
         <div style={pageHeader}>
           <div>
-            <h1 style={pageTitle}>Toma de inventario — {empresa?.nombre}</h1>
+            <h1 style={pageTitle}>Toma de inventario — {empresaNombre}</h1>
             <p style={pageSubtitle}>Ajusta el stock real con los conteos físicos mensuales</p>
           </div>
-          <button onClick={() => router.push(`/bodega?empresa=${empresaId}`)} style={backBtn}>
+          <button onClick={() => router.push("/bodega")} style={backBtn}>
             ← Volver a Bodega
           </button>
         </div>
-
-        {/* Empresa tabs */}
-        {empresas.length > 1 && (
-          <div style={empresaBar}>
-            {empresas.map((e) => (
-              <button
-                key={e.id}
-                onClick={() => { setEmpresaId(e.id); loadStock(e.id); setStep(1); setLineas([]); setSaved(false); }}
-                style={{ ...empresaBtn, ...(e.id === empresaId ? empresaBtnActive : {}) }}
-              >
-                {e.nombre}
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* Main tabs */}
         <div style={tabBar}>
@@ -476,7 +453,7 @@ function InventarioContent() {
                   <>
                     <div style={{ marginBottom: "16px", padding: "12px 16px", background: "#f0fdf4", borderRadius: "10px", border: "1px solid #bbf7d0" }}>
                       <p style={{ fontSize: "13px", color: "#15803d", margin: 0 }}>
-                        <strong>{stockActual.length} productos</strong> en stock para {empresa?.nombre}.
+                        <strong>{stockActual.length} productos</strong> en stock para {empresaNombre}.
                         {" "}Productos con costo promedio calculado: {Object.values(costos).filter(v => v != null).length}
                       </p>
                     </div>
@@ -604,7 +581,7 @@ function InventarioContent() {
                     >
                       Nueva toma
                     </button>
-                    <button onClick={() => router.push(`/bodega?empresa=${empresaId}`)} style={cancelBtn}>
+                    <button onClick={() => router.push("/bodega")} style={cancelBtn}>
                       Ir a Bodega
                     </button>
                   </div>
@@ -738,9 +715,6 @@ const container: React.CSSProperties = { maxWidth: "1200px", margin: "0 auto", p
 const pageHeader: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", flexWrap: "wrap", gap: "12px" };
 const pageTitle: React.CSSProperties = { fontSize: "24px", fontWeight: 800, color: "#1a4731" };
 const pageSubtitle: React.CSSProperties = { fontSize: "13px", color: "#6b7280", marginTop: "4px" };
-const empresaBar: React.CSSProperties = { display: "flex", gap: "8px", marginBottom: "16px" };
-const empresaBtn: React.CSSProperties = { padding: "8px 18px", borderRadius: "999px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: "pointer" };
-const empresaBtnActive: React.CSSProperties = { background: "#1a4731", border: "1.5px solid #1a4731", color: "#fff" };
 const tabBar: React.CSSProperties = { display: "flex", gap: "4px", marginBottom: "16px", borderBottom: "2px solid #e5e7eb" };
 const tabBtn: React.CSSProperties = { padding: "8px 18px", borderRadius: "8px 8px 0 0", border: "none", background: "transparent", color: "#6b7280", fontWeight: 600, fontSize: "14px", cursor: "pointer" };
 const tabBtnActive: React.CSSProperties = { background: "#1a4731", color: "#fff" };

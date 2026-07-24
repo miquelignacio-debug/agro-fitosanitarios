@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useRol } from "@/lib/useRol";
-import type { Empresa, OrdenTrabajo, StockActual } from "@/lib/types";
+import { useEmpresa } from "@/lib/useEmpresa";
+import type { OrdenTrabajo, StockActual } from "@/lib/types";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
 import { Suspense } from "react";
 
@@ -42,12 +43,9 @@ type Costo = {
 
 function DashboardContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const empresaParam = searchParams.get("empresa") || "";
-  const { isAdmin, isOperador } = useRol();
+  const { empresaId, empresaNombre } = useEmpresa();
+  const { isAdmin, isEncargado } = useRol();
 
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [empresaId, setEmpresaId] = useState(empresaParam);
   const [ordenes, setOrdenes] = useState<OrdenTrabajo[]>([]);
   const [borradores, setBorradores] = useState<BorradorOT[]>([]);
   const [proximas, setProximas] = useState<ProximaOT[]>([]);
@@ -61,15 +59,11 @@ function DashboardContent() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const { data: emp } = await supabase.from("empresas").select("*").order("nombre");
-      if (!emp || emp.length === 0) return;
-      setEmpresas(emp);
-      const eid = empresaParam || emp[0].id;
-      setEmpresaId(eid);
-      await loadData(eid);
+      if (!empresaId) return;
+      await loadData(empresaId);
     };
     init();
-  }, [empresaParam]);
+  }, [empresaId]);
 
   const loadData = async (eid: string) => {
     setLoading(true);
@@ -251,35 +245,17 @@ function DashboardContent() {
     setCostos({ total, porHa, top });
   };
 
-  const switchEmpresa = (eid: string) => {
-    setEmpresaId(eid);
-    router.push(`/dashboard?empresa=${eid}`);
-    // No llamar loadData aquí — el useEffect lo dispara al cambiar empresaParam
-  };
-
-  const empresa = empresas.find(e => e.id === empresaId);
-
   return (
     <>
-      <Nav empresaId={empresaId} />
+      <Nav />
       <main style={container}>
-        {/* Selector empresa */}
-        <div style={empresaBar}>
-          {empresas.map(e => (
-            <button key={e.id} onClick={() => switchEmpresa(e.id)}
-              style={{ ...empresaBtn, ...(e.id === empresaId ? empresaBtnActive : {}) }}>
-              {e.nombre}
-            </button>
-          ))}
-        </div>
-
         <div style={pageHeader}>
           <div>
-            <h1 style={pageTitle}>{empresa?.nombre || "—"}</h1>
+            <h1 style={pageTitle}>{empresaNombre || "—"}</h1>
             <p style={pageSubtitle}>Panel de gestión fitosanitaria</p>
           </div>
-          {(isAdmin || isOperador) && (
-            <Link href={`/ordenes/nueva?empresa=${empresaId}`} style={primaryBtn}>+ Nueva orden</Link>
+          {(isAdmin || isEncargado) && (
+            <Link href="/ordenes/nueva" style={primaryBtn}>+ Nueva orden</Link>
           )}
         </div>
 
@@ -316,7 +292,7 @@ function DashboardContent() {
               <section style={{ ...panel, marginBottom: "20px" }}>
                 <div style={panelHeader}>
                   <h2 style={panelTitle}>Carencias activas por cuartel</h2>
-                  <Link href={`/cuaderno?empresa=${empresaId}`} style={linkMore}>Ver cuaderno →</Link>
+                  <Link href="/cuaderno" style={linkMore}>Ver cuaderno →</Link>
                 </div>
                 <div style={carenciasGrid}>
                   {carencias.map((c, i) => {
@@ -357,11 +333,11 @@ function DashboardContent() {
               <div style={{ ...panelHeader, marginBottom: "4px" }}>
                 <div>
                   <h2 style={panelTitle}>Programación — próximos 14 días</h2>
-                  {empresa?.nombre && (
-                    <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: "2px" }}>{empresa.nombre}</p>
+                  {empresaNombre && (
+                    <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: "2px" }}>{empresaNombre}</p>
                   )}
                 </div>
-                <Link href={`/ordenes?empresa=${empresaId}`} style={linkMore}>Ver todas →</Link>
+                <Link href="/ordenes" style={linkMore}>Ver todas →</Link>
               </div>
 
               {/* Tira de calendario — usa fecha local, no UTC */}
@@ -446,7 +422,7 @@ function DashboardContent() {
                                   {ESTADOS_OT[ot.estado]}
                                 </span>
                               </div>
-                              <Link href={`/ordenes/${ot.id}?empresa=${empresaId}`} style={{ fontSize: "11px", color: "#6b7280", textDecoration: "none" }}>
+                              <Link href={`/ordenes/${ot.id}`} style={{ fontSize: "11px", color: "#6b7280", textDecoration: "none" }}>
                                 Ver detalle →
                               </Link>
                             </div>
@@ -489,17 +465,17 @@ function DashboardContent() {
 
             <div style={grid}>
               {/* Borradores pendientes de aprobación (admin y operador) */}
-              {(isAdmin || isOperador) && borradores.length > 0 && (
+              {(isAdmin || isEncargado) && borradores.length > 0 && (
                 <section style={{ ...panel, borderColor: "#fde68a", background: "#fffdf0" }}>
                   <div style={panelHeader}>
                     <h2 style={{ ...panelTitle, color: "#92400e" }}>
                       {isAdmin ? "Borradores por aprobar" : "Mis borradores"}
                     </h2>
-                    <Link href={`/ordenes?empresa=${empresaId}`} style={linkMore}>Ver todas →</Link>
+                    <Link href="/ordenes" style={linkMore}>Ver todas →</Link>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                     {borradores.map(ot => (
-                      <Link key={ot.id} href={`/ordenes/${ot.id}?empresa=${empresaId}`} style={{ ...otRow, background: "#fefce8", borderColor: "#fde68a" }}>
+                      <Link key={ot.id} href={`/ordenes/${ot.id}`} style={{ ...otRow, background: "#fefce8", borderColor: "#fde68a" }}>
                         <span style={otNum}>OT #{ot.numero}</span>
                         <span style={{ flex: 1, fontSize: "13px", color: "#374151" }}>
                           {ot.fecha_solicitud}
@@ -522,14 +498,14 @@ function DashboardContent() {
               <section style={panel}>
                 <div style={panelHeader}>
                   <h2 style={panelTitle}>Órdenes activas</h2>
-                  <Link href={`/ordenes?empresa=${empresaId}`} style={linkMore}>Ver todas →</Link>
+                  <Link href="/ordenes" style={linkMore}>Ver todas →</Link>
                 </div>
                 {ordenes.length === 0 ? (
                   <p style={empty}>No hay órdenes emitidas o en ejecución.</p>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                     {ordenes.map(ot => (
-                      <Link key={ot.id} href={`/ordenes/${ot.id}?empresa=${empresaId}`} style={otRow}>
+                      <Link key={ot.id} href={`/ordenes/${ot.id}`} style={otRow}>
                         <span style={otNum}>OT #{ot.numero}</span>
                         <span style={{ flex: 1, fontSize: "13px", color: "#374151" }}>
                           {ot.fecha_aplicacion || ot.fecha_solicitud}
@@ -552,7 +528,7 @@ function DashboardContent() {
               <section style={panel}>
                 <div style={panelHeader}>
                   <h2 style={panelTitle}>⚠ Stock bajo mínimo</h2>
-                  <Link href={`/bodega?empresa=${empresaId}`} style={linkMore}>Ver bodega →</Link>
+                  <Link href="/bodega" style={linkMore}>Ver bodega →</Link>
                 </div>
                 {stockBajo.length === 0 ? (
                   <p style={empty}>Sin alertas de stock.</p>
@@ -584,7 +560,7 @@ function DashboardContent() {
               <section style={panel}>
                 <div style={panelHeader}>
                   <h2 style={panelTitle}>Costos {new Date().getFullYear()}</h2>
-                  <Link href={`/cuaderno?empresa=${empresaId}`} style={linkMore}>Detalle →</Link>
+                  <Link href="/cuaderno" style={linkMore}>Detalle →</Link>
                 </div>
                 {costos.total === 0 && costos.top.length === 0 ? (
                   <div>
@@ -646,9 +622,6 @@ const kpiBar: React.CSSProperties        = { display: "grid", gridTemplateColumn
 const kpiCard: React.CSSProperties       = { background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: "14px", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "6px" };
 const kpiLabel: React.CSSProperties      = { fontSize: "11px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" };
 const kpiValue: React.CSSProperties      = { fontSize: "32px", fontWeight: 800, color: "#1a4731", lineHeight: 1 };
-const empresaBar: React.CSSProperties    = { display: "flex", gap: "8px", marginBottom: "22px", flexWrap: "wrap" };
-const empresaBtn: React.CSSProperties    = { padding: "8px 18px", borderRadius: "999px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: "pointer" };
-const empresaBtnActive: React.CSSProperties = { background: "#1a4731", border: "1.5px solid #1a4731", color: "#fff" };
 const pageHeader: React.CSSProperties   = { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "12px" };
 const pageTitle: React.CSSProperties    = { fontSize: "28px", fontWeight: 800, color: "#1a4731" };
 const pageSubtitle: React.CSSProperties = { fontSize: "14px", color: "#6b7280", marginTop: "4px" };

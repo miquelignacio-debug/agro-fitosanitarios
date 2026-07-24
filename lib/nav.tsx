@@ -2,50 +2,51 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { supabase } from "./supabaseClient";
 import { useRouter } from "next/navigation";
 import { useRol } from "./useRol";
+import { useEmpresa } from "./useEmpresa";
 
 const NAV_LINKS = [
-  { href: "/dashboard",    label: "Inicio" },
-  { href: "/ordenes",      label: "Órdenes" },
-  { href: "/cuaderno",     label: "Cuaderno" },
-  { href: "/bodega",       label: "Bodega" },
-  { href: "/calculadora",  label: "Calcular" },
-  { href: "/cuarteles",    label: "Cuarteles" },
-  { href: "/productos",    label: "Productos" },
-  { href: "/ajustes",      label: "Ajustes" },
+  { href: "/dashboard",   label: "Inicio" },
+  { href: "/ordenes",     label: "Órdenes" },
+  { href: "/cuaderno",    label: "Cuaderno" },
+  { href: "/bodega",      label: "Bodega" },
+  { href: "/calculadora", label: "Calcular" },
+  { href: "/cuarteles",   label: "Cuarteles" },
+  { href: "/productos",   label: "Productos" },
+  { href: "/ajustes",     label: "Ajustes" },
 ];
 
-function NavContent({ empresaId }: { empresaId?: string }) {
+function NavContent() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const currentEmpresa = empresaId || searchParams.get("empresa") || "";
-  const { isAdmin } = useRol();
+  const { isAdmin, isSuperAdmin } = useRol();
+  const { empresaId, empresaNombre, allEmpresas, switchEmpresa } = useEmpresa();
   const [borradoresCount, setBorradoresCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    if (!isAdmin) { setBorradoresCount(0); return; }
+    if (!isAdmin || !empresaId) { setBorradoresCount(0); return; }
     supabase
       .from("ordenes_trabajo")
       .select("id", { count: "exact", head: true })
+      .eq("empresa_id", empresaId)
       .eq("estado", "borrador")
       .then(({ count }) => setBorradoresCount(count ?? 0));
-  }, [isAdmin, pathname]);
+  }, [isAdmin, empresaId, pathname]);
 
-  // Cerrar menú al cambiar de ruta
   useEffect(() => { setMenuOpen(false); }, [pathname]);
-
-  const buildHref = (base: string) =>
-    currentEmpresa ? `${base}?empresa=${currentEmpresa}` : base;
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
   };
+
+  const adminLinks = isSuperAdmin
+    ? [...NAV_LINKS, { href: "/admin", label: "Admin" }]
+    : NAV_LINKS;
 
   return (
     <>
@@ -61,15 +62,20 @@ function NavContent({ empresaId }: { empresaId?: string }) {
       `}</style>
       <nav style={navStyle}>
         <div style={navInner}>
-          <span style={logo}>🌿 AgroFito</span>
+          <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, marginRight: "4px" }}>
+            <span style={logo}>🌿 AgroFito</span>
+            {empresaNombre && (
+              <span style={empresaLabel}>{empresaNombre}</span>
+            )}
+          </div>
 
           {/* Links desktop */}
           <div className="nav-links-desktop" style={links}>
-            {NAV_LINKS.map((l) => {
+            {adminLinks.map((l) => {
               const active = pathname.startsWith(l.href);
               const showBadge = l.href === "/ordenes" && isAdmin && borradoresCount > 0;
               return (
-                <Link key={l.href} href={buildHref(l.href)}
+                <Link key={l.href} href={l.href}
                   style={{ ...linkStyle, ...(active ? activeLinkStyle : {}), position: "relative" }}>
                   {l.label}
                   {showBadge && <span style={badge}>{borradoresCount > 9 ? "9+" : borradoresCount}</span>}
@@ -78,9 +84,23 @@ function NavContent({ empresaId }: { empresaId?: string }) {
             })}
           </div>
 
+          {/* Selector de empresa (solo superadmin) */}
+          {isSuperAdmin && allEmpresas.length > 1 && (
+            <select
+              value={empresaId}
+              onChange={e => switchEmpresa(e.target.value)}
+              style={empresaSelector}
+              className="nav-logout-desktop"
+            >
+              {allEmpresas.map(e => (
+                <option key={e.id} value={e.id}>{e.nombre}</option>
+              ))}
+            </select>
+          )}
+
           <button onClick={handleLogout} className="nav-logout-desktop" style={logoutBtn}>Salir</button>
 
-          {/* Hamburger button — solo mobile */}
+          {/* Hamburger — solo mobile */}
           <button
             className="nav-hamburger"
             onClick={() => setMenuOpen(o => !o)}
@@ -94,18 +114,29 @@ function NavContent({ empresaId }: { empresaId?: string }) {
         </div>
 
         {/* Menú desplegable mobile */}
-        <div className="nav-links-mobile" style={{ ...mobileMenu, maxHeight: menuOpen ? "500px" : "0", opacity: menuOpen ? 1 : 0 }}>
-          {NAV_LINKS.map((l) => {
+        <div className="nav-links-mobile" style={{ ...mobileMenu, maxHeight: menuOpen ? "600px" : "0", opacity: menuOpen ? 1 : 0 }}>
+          {adminLinks.map((l) => {
             const active = pathname.startsWith(l.href);
             const showBadge = l.href === "/ordenes" && isAdmin && borradoresCount > 0;
             return (
-              <Link key={l.href} href={buildHref(l.href)}
+              <Link key={l.href} href={l.href}
                 style={{ ...mobileLinkStyle, ...(active ? activeLinkStyle : {}), position: "relative" }}>
                 {l.label}
                 {showBadge && <span style={badge}>{borradoresCount > 9 ? "9+" : borradoresCount}</span>}
               </Link>
             );
           })}
+          {isSuperAdmin && allEmpresas.length > 1 && (
+            <select
+              value={empresaId}
+              onChange={e => switchEmpresa(e.target.value)}
+              style={{ ...empresaSelector, margin: "8px 16px", width: "calc(100% - 32px)" }}
+            >
+              {allEmpresas.map(e => (
+                <option key={e.id} value={e.id}>{e.nombre}</option>
+              ))}
+            </select>
+          )}
           <button onClick={handleLogout} style={{ ...logoutBtn, margin: "8px 16px 16px", width: "calc(100% - 32px)" }}>
             Salir
           </button>
@@ -130,10 +161,10 @@ function NavFallback() {
   );
 }
 
-export default function Nav({ empresaId }: { empresaId?: string }) {
+export default function Nav() {
   return (
     <Suspense fallback={<NavFallback />}>
-      <NavContent empresaId={empresaId} />
+      <NavContent />
     </Suspense>
   );
 }
@@ -145,7 +176,6 @@ const navStyle: React.CSSProperties = {
   top: 0,
   zIndex: 100,
 };
-
 const navInner: React.CSSProperties = {
   maxWidth: "1300px",
   margin: "0 auto",
@@ -155,23 +185,26 @@ const navInner: React.CSSProperties = {
   alignItems: "center",
   gap: "8px",
 };
-
 const logo: React.CSSProperties = {
   color: "#fff",
   fontWeight: 800,
   fontSize: "15px",
   whiteSpace: "nowrap",
-  marginRight: "4px",
-  flexShrink: 0,
+  lineHeight: 1.2,
 };
-
+const empresaLabel: React.CSSProperties = {
+  color: "rgba(255,255,255,0.55)",
+  fontSize: "10px",
+  fontWeight: 600,
+  whiteSpace: "nowrap",
+  letterSpacing: "0.03em",
+};
 const links: React.CSSProperties = {
   display: "flex",
   gap: "2px",
   flex: 1,
   flexWrap: "wrap",
 };
-
 const linkStyle: React.CSSProperties = {
   color: "rgba(255,255,255,0.75)",
   padding: "6px 10px",
@@ -182,7 +215,6 @@ const linkStyle: React.CSSProperties = {
   transition: "background 0.15s",
   whiteSpace: "nowrap",
 };
-
 const mobileLinkStyle: React.CSSProperties = {
   color: "rgba(255,255,255,0.85)",
   padding: "12px 20px",
@@ -191,12 +223,10 @@ const mobileLinkStyle: React.CSSProperties = {
   textDecoration: "none",
   borderBottom: "1px solid rgba(255,255,255,0.08)",
 };
-
 const activeLinkStyle: React.CSSProperties = {
   background: "rgba(255,255,255,0.15)",
   color: "#fff",
 };
-
 const badge: React.CSSProperties = {
   position: "absolute",
   top: "-5px",
@@ -215,7 +245,6 @@ const badge: React.CSSProperties = {
   lineHeight: "1",
   pointerEvents: "none",
 };
-
 const logoutBtn: React.CSSProperties = {
   background: "transparent",
   border: "1px solid rgba(255,255,255,0.35)",
@@ -228,7 +257,6 @@ const logoutBtn: React.CSSProperties = {
   whiteSpace: "nowrap",
   flexShrink: 0,
 };
-
 const hamburgerBtn: React.CSSProperties = {
   background: "transparent",
   border: "none",
@@ -237,10 +265,21 @@ const hamburgerBtn: React.CSSProperties = {
   marginLeft: "auto",
   flexShrink: 0,
 };
-
 const mobileMenu: React.CSSProperties = {
   flexDirection: "column",
   background: "#14532d",
   overflow: "hidden",
   transition: "max-height 0.3s ease, opacity 0.2s ease",
+};
+const empresaSelector: React.CSSProperties = {
+  background: "rgba(255,255,255,0.12)",
+  border: "1px solid rgba(255,255,255,0.25)",
+  color: "#fff",
+  padding: "5px 10px",
+  borderRadius: "8px",
+  fontSize: "12px",
+  fontWeight: 600,
+  cursor: "pointer",
+  flexShrink: 0,
+  maxWidth: "160px",
 };

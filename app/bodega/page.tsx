@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useRol } from "@/lib/useRol";
+import { useEmpresa } from "@/lib/useEmpresa";
 import type { Empresa, StockMovimiento, Producto } from "@/lib/types";
 
 type StockRow = {
@@ -41,12 +42,11 @@ type SalidaVentaForm = {
 
 function BodegaContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const empresaParam = searchParams.get("empresa") || "";
-  const { isAdmin, isOperador } = useRol();
+  const { empresaId, empresaNombre } = useEmpresa();
+  const { isAdmin, isEncargado } = useRol();
+  const showPrecios = isAdmin;
 
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [empresaId, setEmpresaId] = useState(empresaParam);
   const [stock, setStock] = useState<StockRow[]>([]);
   const [movimientos, setMovimientos] = useState<StockMovimiento[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,14 +88,12 @@ function BodegaContent() {
         supabase.from("proveedores").select("nombre").eq("activo", true).order("nombre"),
       ]);
       setCatalogProv((prov || []).map((r: { nombre: string }) => r.nombre));
-      if (!emp || emp.length === 0) return;
-      setEmpresas(emp);
-      const eid = empresaParam || emp[0].id;
-      setEmpresaId(eid);
-      await load(eid);
+      if (emp) setEmpresas(emp);
+      if (!empresaId) return;
+      await load(empresaId);
     };
     init();
-  }, [empresaParam]);
+  }, [empresaId]);
 
   const load = async (eid: string) => {
     setLoading(true);
@@ -131,14 +129,6 @@ function BodegaContent() {
     setMovimientos(mvsConOt as StockMovimiento[]);
     setLoading(false);
   };
-
-  const switchEmpresa = (eid: string) => {
-    setEmpresaId(eid);
-    router.push(`/bodega?empresa=${eid}`);
-    // No llamar load() aquí — el useEffect lo dispara al cambiar empresaParam
-  };
-
-  const empresa = empresas.find((e) => e.id === empresaId);
 
   const funcionesDisponibles = Array.from(
     new Set(stock.flatMap(s => s.producto.tipo_funcion || []))
@@ -184,7 +174,7 @@ function BodegaContent() {
     if (!productoId)                       { setTransfError("Seleccioná un producto."); return; }
     if (!cantidad || parseFloat(cantidad) <= 0) { setTransfError("La cantidad debe ser mayor a 0."); return; }
 
-    const destNombre = empresa?.nombre || "destino";
+    const destNombre = empresaNombre || "destino";
     const origNombre = empresas.find(e => e.id === origenId)?.nombre || "origen";
     setTransfSaving(true);
 
@@ -321,32 +311,20 @@ function BodegaContent() {
 
   return (
     <>
-      <Nav empresaId={empresaId} />
+      <Nav />
       <main style={container}>
-        <div style={empresaBar}>
-          {empresas.map((e) => (
-            <button
-              key={e.id}
-              onClick={() => switchEmpresa(e.id)}
-              style={{ ...empresaBtn, ...(e.id === empresaId ? empresaBtnActive : {}) }}
-            >
-              {e.nombre}
-            </button>
-          ))}
-        </div>
-
         <div style={pageHeader}>
           <div>
-            <h1 style={pageTitle}>Bodega — {empresa?.nombre}</h1>
+            <h1 style={pageTitle}>Bodega — {empresaNombre}</h1>
             <p style={pageSubtitle}>Stock de productos fitosanitarios</p>
           </div>
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             {isAdmin && (
               <>
-                <Link href={`/bodega/carga-inicial?empresa=${empresaId}`} style={secondaryBtn}>
+                <Link href="/bodega/carga-inicial" style={secondaryBtn}>
                   Inventario inicial (plantilla)
                 </Link>
-                <Link href={`/bodega/inventario?empresa=${empresaId}`} style={secondaryBtn}>
+                <Link href="/bodega/inventario" style={secondaryBtn}>
                   Toma de inventario
                 </Link>
                 {empresas.length > 1 && (
@@ -356,15 +334,15 @@ function BodegaContent() {
                 )}
               </>
             )}
-            {(isAdmin || isOperador) && (
-              <>
-                <button onClick={openSalidaVenta} style={secondaryBtn}>
-                  Salida venta / devolución
-                </button>
-                <Link href={`/bodega/ingreso?empresa=${empresaId}`} style={primaryBtn}>
-                  + Ingreso a bodega
-                </Link>
-              </>
+            {isAdmin && (
+              <button onClick={openSalidaVenta} style={secondaryBtn}>
+                Salida venta / devolución
+              </button>
+            )}
+            {(isAdmin || isEncargado) && (
+              <Link href="/bodega/ingreso" style={primaryBtn}>
+                + Ingreso a bodega
+              </Link>
             )}
           </div>
         </div>
@@ -413,7 +391,7 @@ function BodegaContent() {
 
                 <div>
                   <label style={lbl}>Empresa destino (recibe el stock)</label>
-                  <div style={{ ...minp, background: "#f3f4f6", color: "#6b7280" }}>{empresa?.nombre}</div>
+                  <div style={{ ...minp, background: "#f3f4f6", color: "#6b7280" }}>{empresaNombre}</div>
                 </div>
 
                 <div>
@@ -716,7 +694,9 @@ function BodegaContent() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Fecha", "Tipo", "Producto", "Cantidad", "Valor unit.", "Valor total", "Documento", "Origen / OT / Destino", "Notas", ""].map((h) => (
+                  {["Fecha", "Tipo", "Producto", "Cantidad",
+                    ...(showPrecios ? ["Valor unit.", "Valor total"] : []),
+                    "Documento", "Origen / OT / Destino", "Notas", ""].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -734,16 +714,20 @@ function BodegaContent() {
                     <td style={{ ...td, textAlign: "right" }}>
                       {m.tipo.includes("salida") ? "-" : "+"}{Number(m.cantidad).toFixed(3)} {m.unidad}
                     </td>
-                    <td style={{ ...td, textAlign: "right", color: "#6b7280" }}>
-                      {(m.precio_unitario ?? m.costo_unitario) != null
-                        ? `$${Number(m.precio_unitario ?? m.costo_unitario).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
-                        : "—"}
-                    </td>
-                    <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>
-                      {(m.precio_unitario ?? m.costo_unitario) != null
-                        ? `$${(Number(m.precio_unitario ?? m.costo_unitario) * Number(m.cantidad)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
-                        : "—"}
-                    </td>
+                    {showPrecios && (
+                      <td style={{ ...td, textAlign: "right", color: "#6b7280" }}>
+                        {(m.precio_unitario ?? m.costo_unitario) != null
+                          ? `$${Number(m.precio_unitario ?? m.costo_unitario).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
+                          : "—"}
+                      </td>
+                    )}
+                    {showPrecios && (
+                      <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>
+                        {(m.precio_unitario ?? m.costo_unitario) != null
+                          ? `$${(Number(m.precio_unitario ?? m.costo_unitario) * Number(m.cantidad)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
+                          : "—"}
+                      </td>
+                    )}
                     <td style={td}>
                       {m.documento_tipo ? (
                         <span>
@@ -758,7 +742,7 @@ function BodegaContent() {
                           ? m.empresa_contraparte.nombre
                           : m.ot_id
                             ? <Link
-                                href={`/ordenes/${m.ot_id}?empresa=${empresaId}`}
+                                href={`/ordenes/${m.ot_id}`}
                                 style={{ color: "#1a4731", fontWeight: 700, textDecoration: "none" }}
                               >
                                 OT #{m.ot?.numero ?? "?"}
@@ -781,7 +765,7 @@ function BodegaContent() {
                 ))}
                 {movimientos.length === 0 && (
                   <tr>
-                    <td colSpan={9} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
+                    <td colSpan={showPrecios ? 9 : 7} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
                       Sin movimientos registrados.
                     </td>
                   </tr>
@@ -801,9 +785,6 @@ function BodegaContent() {
 }
 
 const container: React.CSSProperties = { maxWidth: "1400px", margin: "0 auto", padding: "28px 20px" };
-const empresaBar: React.CSSProperties = { display: "flex", gap: "8px", marginBottom: "20px" };
-const empresaBtn: React.CSSProperties = { padding: "8px 18px", borderRadius: "999px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: "pointer" };
-const empresaBtnActive: React.CSSProperties = { background: "#1a4731", border: "1.5px solid #1a4731", color: "#fff" };
 const pageHeader: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", flexWrap: "wrap", gap: "12px" };
 const pageTitle: React.CSSProperties = { fontSize: "24px", fontWeight: 800, color: "#1a4731" };
 const pageSubtitle: React.CSSProperties = { fontSize: "13px", color: "#6b7280", marginTop: "4px" };

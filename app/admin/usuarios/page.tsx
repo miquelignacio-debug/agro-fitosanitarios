@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import type { Usuario } from "@/lib/types";
 
-const ROL_LABELS: Record<string, string> = { admin: "Administrador", operador: "Operador", visualizador: "Visualizador" };
+const ROL_LABELS: Record<string, string> = { admin: "Administrador", encargado: "Encargado", visualizador: "Visualizador" };
 
 export default function AdminUsuariosPage() {
   const router = useRouter();
@@ -22,7 +22,7 @@ export default function AdminUsuariosPage() {
   const [fEmail, setFEmail] = useState("");
   const [fPassword, setFPassword] = useState("");
   const [fRut, setFRut] = useState("");
-  const [fRol, setFRol] = useState<"admin" | "operador" | "visualizador">("admin");
+  const [fRol, setFRol] = useState<"admin" | "encargado" | "visualizador">("admin");
 
   useEffect(() => {
     const init = async () => {
@@ -51,7 +51,7 @@ export default function AdminUsuariosPage() {
 
   const openEdit = (u: Usuario) => {
     setEditing(u);
-    setFNombre(u.nombre); setFEmail(""); setFPassword(""); setFRut(u.rut || ""); setFRol(u.rol);
+    setFNombre(u.nombre); setFEmail(""); setFPassword(""); setFRut(u.rut || ""); setFRol((u.rol === "superadmin" ? "admin" : u.rol) as "admin" | "encargado" | "visualizador");
     setError("");
     setShowModal(true);
   };
@@ -125,7 +125,7 @@ export default function AdminUsuariosPage() {
                 <div style={{ flex: 1 }}>
                   <div style={cardName}>{u.nombre}</div>
                   {u.rut && <div style={cardSub}>RUT: {u.rut}</div>}
-                  <span style={{ ...rolBadge, ...(u.rol === "admin" ? rolAdmin : u.rol === "operador" ? rolOperador : rolVisualizador) }}>
+                  <span style={{ ...rolBadge, ...(u.rol === "admin" ? rolAdmin : u.rol === "encargado" ? rolOperador : rolVisualizador) }}>
                     {ROL_LABELS[u.rol] ?? u.rol}
                   </span>
                 </div>
@@ -166,9 +166,9 @@ export default function AdminUsuariosPage() {
                 </div>
                 <div style={formField}>
                   <label style={labelStyle}>Rol *</label>
-                  <select value={fRol} onChange={(e) => setFRol(e.target.value as "admin" | "operador" | "visualizador")} style={inputStyle}>
+                  <select value={fRol} onChange={(e) => setFRol(e.target.value as "admin" | "encargado" | "visualizador")} style={inputStyle}>
                     <option value="admin">Administrador</option>
-                    <option value="operador">Operador</option>
+                    <option value="encargado">Encargado</option>
                     <option value="visualizador">Visualizador</option>
                   </select>
                 </div>

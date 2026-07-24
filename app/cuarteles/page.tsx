@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
+import { useEmpresa } from "@/lib/useEmpresa";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
-import type { Cuartel, Empresa, OrdenTrabajo } from "@/lib/types";
+import type { Cuartel, OrdenTrabajo } from "@/lib/types";
 
 type HistorialOT = Pick<OrdenTrabajo, "id" | "numero" | "fecha_aplicacion" | "fecha_solicitud" | "estado" | "funcion"> & {
   ot_productos: { dosis_real: number; dosis_unidad: string; productos: { nombre_comercial: string } | null }[];
@@ -13,11 +14,8 @@ type HistorialOT = Pick<OrdenTrabajo, "id" | "numero" | "fecha_aplicacion" | "fe
 
 function CuartelesContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const empresaParam = searchParams.get("empresa") || "";
+  const { empresaId, empresaNombre } = useEmpresa();
 
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [empresaId, setEmpresaId] = useState(empresaParam);
   const [cuarteles, setCuarteles] = useState<Cuartel[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Cuartel | null>(null);
@@ -32,15 +30,11 @@ function CuartelesContent() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const { data: emp } = await supabase.from("empresas").select("*").order("nombre");
-      if (!emp || emp.length === 0) return;
-      setEmpresas(emp);
-      const eid = empresaParam || emp[0].id;
-      setEmpresaId(eid);
-      await load(eid);
+      if (!empresaId) return;
+      await load(empresaId);
     };
     init();
-  }, [empresaParam]);
+  }, [empresaId]);
 
   const load = async (eid: string) => {
     setLoading(true);
@@ -51,12 +45,6 @@ function CuartelesContent() {
       .order("codigo");
     setCuarteles((data as Cuartel[]) || []);
     setLoading(false);
-  };
-
-  const switchEmpresa = (eid: string) => {
-    setEmpresaId(eid);
-    router.push(`/cuarteles?empresa=${eid}`);
-    // No llamar load() aquí — el useEffect lo dispara al cambiar empresaParam
   };
 
   const handleSave = async () => {
@@ -115,27 +103,13 @@ function CuartelesContent() {
       c.variedad.toLowerCase().includes(search.toLowerCase())
   );
 
-  const empresa = empresas.find((e) => e.id === empresaId);
-
   return (
     <>
-      <Nav empresaId={empresaId} />
+      <Nav />
       <main style={container}>
-        <div style={empresaBar}>
-          {empresas.map((e) => (
-            <button
-              key={e.id}
-              onClick={() => switchEmpresa(e.id)}
-              style={{ ...empresaBtn, ...(e.id === empresaId ? empresaBtnActive : {}) }}
-            >
-              {e.nombre}
-            </button>
-          ))}
-        </div>
-
         <div style={pageHeader}>
           <div>
-            <h1 style={pageTitle}>Cuarteles — {empresa?.nombre}</h1>
+            <h1 style={pageTitle}>Cuarteles — {empresaNombre}</h1>
             <p style={pageSubtitle}>{cuarteles.filter((c) => c.activo).length} cuarteles activos</p>
           </div>
           <input
@@ -298,9 +272,6 @@ function CuartelesContent() {
 }
 
 const container: React.CSSProperties = { maxWidth: "1400px", margin: "0 auto", padding: "28px 20px" };
-const empresaBar: React.CSSProperties = { display: "flex", gap: "8px", marginBottom: "20px" };
-const empresaBtn: React.CSSProperties = { padding: "8px 18px", borderRadius: "999px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: "pointer" };
-const empresaBtnActive: React.CSSProperties = { background: "#1a4731", border: "1.5px solid #1a4731", color: "#fff" };
 const pageHeader: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", flexWrap: "wrap", gap: "12px" };
 const pageTitle: React.CSSProperties = { fontSize: "24px", fontWeight: 800, color: "#1a4731" };
 const pageSubtitle: React.CSSProperties = { fontSize: "13px", color: "#6b7280", marginTop: "4px" };

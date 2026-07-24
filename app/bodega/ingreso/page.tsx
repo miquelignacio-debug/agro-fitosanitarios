@@ -1,18 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
-import type { Empresa, Producto, Usuario } from "@/lib/types";
+import { useEmpresa } from "@/lib/useEmpresa";
+import type { Producto, Usuario } from "@/lib/types";
 
 import { Suspense } from "react";
 function IngresoContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const empresaId = searchParams.get("empresa") || "";
+  const { empresaId } = useEmpresa();
 
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [saving, setSaving] = useState(false);
@@ -20,7 +19,6 @@ function IngresoContent() {
   const [saved, setSaved] = useState(false);
 
   // Form
-  const [selectedEmpresa, setSelectedEmpresa] = useState(empresaId);
   const [productoId, setProductoId] = useState("");
   const [cantidad, setCantidad] = useState("");
   const [unidad, setUnidad] = useState("lt");
@@ -38,17 +36,14 @@ function IngresoContent() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
 
-      const [{ data: emp }, { data: prod }, { data: usr }, { data: prov }] = await Promise.all([
-        supabase.from("empresas").select("*").order("nombre"),
+      const [{ data: prod }, { data: usr }, { data: prov }] = await Promise.all([
         supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(5000),
         supabase.from("usuarios").select("*").eq("id", user.id).single(),
         supabase.from("proveedores").select("nombre").eq("activo", true).order("nombre"),
       ]);
       setCatalogProv((prov || []).map((r: { nombre: string }) => r.nombre));
-      setEmpresas((emp as Empresa[]) || []);
       setProductos((prod as Producto[]) || []);
       setUsuario(usr as Usuario);
-      if (!selectedEmpresa && emp?.length) setSelectedEmpresa(emp[0].id);
     };
     init();
   }, []);
@@ -59,14 +54,14 @@ function IngresoContent() {
 
   const handleSave = async () => {
     setError("");
-    if (!selectedEmpresa) { setError("Seleccioná una empresa."); return; }
+    if (!empresaId) { setError("No hay empresa activa."); return; }
     if (!productoId) { setError("Seleccioná un producto."); return; }
     if (!cantidad || parseFloat(cantidad) <= 0) { setError("La cantidad debe ser mayor a 0."); return; }
     if (!docNumero.trim()) { setError(`El número de ${docTipo === "guia_despacho" ? "guía de despacho" : "factura"} es obligatorio.`); return; }
 
     setSaving(true);
     const { error: err } = await supabase.from("stock_movimientos").insert({
-      empresa_id: selectedEmpresa,
+      empresa_id: empresaId,
       producto_id: productoId,
       tipo: "entrada",
       cantidad: parseFloat(cantidad),
@@ -92,7 +87,7 @@ function IngresoContent() {
     }
 
     setSaved(true);
-    setTimeout(() => router.push(`/bodega${selectedEmpresa ? `?empresa=${selectedEmpresa}` : ""}`), 1200);
+    setTimeout(() => router.push("/bodega"), 1200);
   };
 
   const productoSel = productos.find((p) => p.id === productoId);
@@ -105,7 +100,7 @@ function IngresoContent() {
 
   return (
     <>
-      <Nav empresaId={empresaId} />
+      <Nav />
       <main style={container}>
         <div style={pageHeader}>
           <h1 style={pageTitle}>Ingreso a bodega</h1>
@@ -113,20 +108,11 @@ function IngresoContent() {
         </div>
 
         <div style={formCard}>
-          {/* Empresa */}
+          {/* Fecha */}
           <section style={section}>
-            <h2 style={sectionTitle}>Empresa</h2>
-            <div style={grid2}>
-              <Field label="Empresa *">
-                <select value={selectedEmpresa} onChange={(e) => setSelectedEmpresa(e.target.value)} style={inputStyle}>
-                  <option value="">— Seleccionar —</option>
-                  {empresas.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-                </select>
-              </Field>
-              <Field label="Fecha *">
-                <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} />
-              </Field>
-            </div>
+            <Field label="Fecha *">
+              <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} />
+            </Field>
           </section>
 
           {/* Documento */}
@@ -249,7 +235,7 @@ function IngresoContent() {
           {saved && <p style={successStyle}>✓ Ingreso registrado correctamente</p>}
 
           <div style={footerRow}>
-            <button onClick={() => router.push(`/bodega${empresaId ? `?empresa=${empresaId}` : ""}`)} style={cancelBtn}>
+            <button onClick={() => router.push("/bodega")} style={cancelBtn}>
               Cancelar
             </button>
             <button onClick={handleSave} style={saveBtn} disabled={saving || saved}>

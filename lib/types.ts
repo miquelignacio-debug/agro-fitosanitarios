@@ -11,7 +11,8 @@ export type Usuario = {
   id: string;
   nombre: string;
   rut: string | null;
-  rol: "admin" | "operador" | "visualizador";
+  rol: "admin" | "encargado" | "visualizador" | "superadmin";
+  empresa_id: string | null;
   created_at: string;
 };
 
@@ -36,6 +37,7 @@ export type Operador = {
   id: string;
   nombre: string;
   rut: string;
+  empresa_id: string | null;
   activo: boolean;
   created_at: string;
 };
@@ -45,6 +47,7 @@ export type Personal = {
   nombre: string;
   rut: string | null;
   cargo: string | null;
+  empresa_id: string | null;
   activo: boolean;
   created_at: string;
 };
@@ -56,6 +59,7 @@ export type Maquinaria = {
   descripcion: string | null;
   capacidad_lt: number | null;
   operador_id: string | null;
+  empresa_id: string | null;
   activo: boolean;
   created_at: string;
 };

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
+import { useEmpresa } from "@/lib/useEmpresa";
 import type { Personal, Maquinaria } from "@/lib/types";
 
 type Tab = "personal" | "maquinaria" | "objetivos" | "proveedores";
@@ -34,6 +34,7 @@ const CARGOS_REQUERIDOS = [
 
 // ── Personal tab ──────────────────────────────────────────────────────────────
 function PersonalTab() {
+  const { empresaId } = useEmpresa();
   const [lista, setLista] = useState<Personal[]>([]);
   const [loading, setLoading] = useState(true);
   const [editando, setEditando] = useState<Partial<Personal> | null>(null);
@@ -42,7 +43,7 @@ function PersonalTab() {
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
   const load = async () => {
-    const { data, error } = await supabase.from("personal").select("*").order("cargo").order("nombre");
+    const { data, error } = await supabase.from("personal").select("*").eq("empresa_id", empresaId).order("cargo").order("nombre");
     if (error) {
       setSaveError(
         error.message.includes("does not exist")
@@ -54,7 +55,7 @@ function PersonalTab() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (empresaId) load(); }, [empresaId]);
 
   const handleSave = async () => {
     if (!editando?.nombre?.trim()) return;
@@ -66,6 +67,7 @@ function PersonalTab() {
       rut: editando.rut?.trim() || null,
       cargo: editando.cargo?.trim() || null,
       activo: editando.activo !== false,
+      empresa_id: empresaId,
     };
 
     const { error } = editando.id
@@ -263,6 +265,7 @@ function PersonalTab() {
 
 // ── Maquinaria tab ────────────────────────────────────────────────────────────
 function MaquinariaTab() {
+  const { empresaId } = useEmpresa();
   const [lista, setLista] = useState<Maquinaria[]>([]);
   const [loading, setLoading] = useState(true);
   const [editando, setEditando] = useState<Partial<Maquinaria> | null>(null);
@@ -270,12 +273,12 @@ function MaquinariaTab() {
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
   const load = async () => {
-    const { data } = await supabase.from("maquinaria").select("*").order("tipo").order("codigo");
+    const { data } = await supabase.from("maquinaria").select("*").eq("empresa_id", empresaId).order("tipo").order("codigo");
     setLista((data as Maquinaria[]) || []);
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (empresaId) load(); }, [empresaId]);
 
   const handleSave = async () => {
     if (!editando?.codigo?.trim()) return;
@@ -286,6 +289,7 @@ function MaquinariaTab() {
       descripcion: editando.descripcion?.trim() || null,
       capacidad_lt: editando.capacidad_lt ?? null,
       activo: editando.activo !== false,
+      empresa_id: empresaId,
     };
     if (editando.id) {
       await supabase.from("maquinaria").update(payload).eq("id", editando.id);
@@ -754,13 +758,11 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 function AjustesContent() {
-  const searchParams = useSearchParams();
-  const empresa = searchParams.get("empresa") || "";
   const [tab, setTab] = useState<Tab>("personal");
 
   return (
     <>
-      <Nav empresaId={empresa} />
+      <Nav />
       <main style={container}>
         <div style={pageHeader}>
           <h1 style={pageTitle}>Ajustes</h1>

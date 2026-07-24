@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useRol } from "@/lib/useRol";
-import type { Empresa, OrdenTrabajo } from "@/lib/types";
+import { useEmpresa } from "@/lib/useEmpresa";
+import type { OrdenTrabajo } from "@/lib/types";
 import { ESTADOS_OT, ESTADOS_OT_COLOR } from "@/lib/types";
 
 type OTConCuarteles = OrdenTrabajo & {
@@ -15,12 +16,9 @@ type OTConCuarteles = OrdenTrabajo & {
 
 function OrdenesContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const { isAdmin, isOperador } = useRol();
-  const empresaParam = searchParams.get("empresa") || "";
+  const { isAdmin, isEncargado } = useRol();
+  const { empresaId, empresaNombre } = useEmpresa();
 
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [empresaId, setEmpresaId] = useState(empresaParam);
   const [ordenes, setOrdenes] = useState<OTConCuarteles[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState("todos");
@@ -29,15 +27,11 @@ function OrdenesContent() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const { data: emp } = await supabase.from("empresas").select("*").order("nombre");
-      if (!emp || emp.length === 0) return;
-      setEmpresas(emp);
-      const eid = empresaParam || emp[0].id;
-      setEmpresaId(eid);
-      await load(eid);
+      if (!empresaId) return;
+      await load(empresaId);
     };
     init();
-  }, [empresaParam]);
+  }, [empresaId]);
 
   const load = async (eid: string) => {
     setLoading(true);
@@ -50,41 +44,21 @@ function OrdenesContent() {
     setLoading(false);
   };
 
-  const switchEmpresa = (eid: string) => {
-    setEmpresaId(eid);
-    router.push(`/ordenes?empresa=${eid}`);
-    // No llamar load() aquí — el useEffect lo dispara al cambiar empresaParam
-  };
-
   const filtered = filtroEstado === "todos"
     ? ordenes
     : ordenes.filter((o) => o.estado === filtroEstado);
 
-  const empresa = empresas.find((e) => e.id === empresaId);
-
   return (
     <>
-      <Nav empresaId={empresaId} />
+      <Nav />
       <main style={container}>
-        <div style={empresaBar}>
-          {empresas.map((e) => (
-            <button
-              key={e.id}
-              onClick={() => switchEmpresa(e.id)}
-              style={{ ...empresaBtn, ...(e.id === empresaId ? empresaBtnActive : {}) }}
-            >
-              {e.nombre}
-            </button>
-          ))}
-        </div>
-
         <div style={pageHeader}>
           <div>
-            <h1 style={pageTitle}>Órdenes de Trabajo — {empresa?.nombre}</h1>
+            <h1 style={pageTitle}>Órdenes de Trabajo — {empresaNombre}</h1>
             <p style={pageSubtitle}>{ordenes.length} órdenes registradas</p>
           </div>
-          {(isAdmin || isOperador) && (
-            <Link href={`/ordenes/nueva?empresa=${empresaId}`} style={primaryBtn}>
+          {(isAdmin || isEncargado) && (
+            <Link href="/ordenes/nueva" style={primaryBtn}>
               + Nueva orden
             </Link>
           )}
@@ -143,7 +117,7 @@ function OrdenesContent() {
                       {ot.ot_cuarteles?.map(c => c.cuartel?.codigo).filter(Boolean).join(", ") || "—"}
                     </td>
                     <td style={td}>
-                      <Link href={`/ordenes/${ot.id}?empresa=${empresaId}`} style={viewLink}>
+                      <Link href={`/ordenes/${ot.id}`} style={viewLink}>
                         Ver →
                       </Link>
                     </td>
@@ -166,9 +140,6 @@ function OrdenesContent() {
 }
 
 const container: React.CSSProperties = { maxWidth: "1400px", margin: "0 auto", padding: "28px 20px" };
-const empresaBar: React.CSSProperties = { display: "flex", gap: "8px", marginBottom: "20px" };
-const empresaBtn: React.CSSProperties = { padding: "8px 18px", borderRadius: "999px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: "pointer" };
-const empresaBtnActive: React.CSSProperties = { background: "#1a4731", border: "1.5px solid #1a4731", color: "#fff" };
 const pageHeader: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", flexWrap: "wrap", gap: "12px" };
 const pageTitle: React.CSSProperties = { fontSize: "24px", fontWeight: 800, color: "#1a4731" };
 const pageSubtitle: React.CSSProperties = { fontSize: "13px", color: "#6b7280", marginTop: "4px" };

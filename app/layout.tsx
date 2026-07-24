@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import SWRegister from "@/lib/SWRegister";
 import InstallPrompt from "@/lib/InstallPrompt";
+import { EmpresaProvider } from "@/lib/useEmpresa";
 
 export const metadata: Metadata = {
   title: "Agro Fitosanitarios",
@@ -26,7 +27,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <body>
-        {children}
+        <EmpresaProvider>
+          {children}
+        </EmpresaProvider>
         <SWRegister />
         <InstallPrompt />
       </body>

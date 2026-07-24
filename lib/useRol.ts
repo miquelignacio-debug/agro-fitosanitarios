@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 
-export type Rol = "admin" | "operador" | "visualizador";
+export type Rol = "admin" | "encargado" | "visualizador" | "superadmin";
 
 export function useRol() {
   const [rol, setRol] = useState<Rol | null>(null);
@@ -19,13 +19,19 @@ export function useRol() {
     });
   }, []);
 
+  const isSuperAdmin   = rol === "superadmin";
+  const isAdmin        = rol === "admin" || isSuperAdmin;
+  const isEncargado    = rol === "encargado";
+  const isVisualizador = rol === "visualizador";
+
   return {
     rol,
-    isAdmin:        rol === "admin",
-    isOperador:     rol === "operador",
-    isVisualizador: rol === "visualizador",
-    puedeEditar:    rol === "admin" || rol === "operador",
-    puedeEliminar:  rol === "admin",
-    puedeAprobar:   rol === "admin",
+    isSuperAdmin,
+    isAdmin,
+    isEncargado,
+    isVisualizador,
+    puedeEditar:   isAdmin || isEncargado,
+    puedeEliminar: isAdmin,
+    puedeAprobar:  isAdmin,
   };
 }

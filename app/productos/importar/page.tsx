@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 
@@ -22,8 +22,6 @@ type FilaImport = {
 import { Suspense } from "react";
 function ImportarSAGContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const empresa = searchParams.get("empresa") || "";
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [filas, setFilas] = useState<FilaImport[]>([]);
@@ -147,7 +145,7 @@ function ImportarSAGContent() {
 
   return (
     <>
-      <Nav empresaId={empresa} />
+      <Nav />
       <main style={container}>
         <div style={pageHeader}>
           <div>
@@ -175,7 +173,7 @@ function ImportarSAGContent() {
           <div style={resultBox}>
             <strong>Importación completada:</strong> {resultado.ok} productos guardados
             {resultado.err > 0 && `, ${resultado.err} con error`}
-            <button onClick={() => router.push(`/productos${empresa ? `?empresa=${empresa}` : ""}`)} style={backBtn}>
+            <button onClick={() => router.push("/productos")} style={backBtn}>
               Ver catálogo
             </button>
           </div>

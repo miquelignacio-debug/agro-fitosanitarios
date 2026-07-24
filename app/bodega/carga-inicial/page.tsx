@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
+import { useEmpresa } from "@/lib/useEmpresa";
 import type { Producto } from "@/lib/types";
 
 type FilaImport = {
@@ -44,8 +44,7 @@ function parseExcelDate(raw: unknown): string {
 }
 
 function CargaInicialContent() {
-  const searchParams = useSearchParams();
-  const empresa = searchParams.get("empresa") || "";
+  const { empresaId } = useEmpresa();
 
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loadingProds, setLoadingProds] = useState(true);
@@ -198,14 +197,14 @@ function CargaInicialContent() {
   const toggleTodos  = (val: boolean) => setFilas(f => f.map(r => r.producto_id ? { ...r, _selected: val } : r));
 
   const handleImportar = async () => {
-    if (!empresa) { setErrorMsg("Seleccioná una empresa en el selector del nav."); return; }
+    if (!empresaId) { setErrorMsg("No hay empresa activa."); return; }
     const seleccionadas = filas.filter(f => f._selected && f.producto_id);
     if (!seleccionadas.length) { setErrorMsg("No hay productos válidos seleccionados."); return; }
 
     setImportando(true);
     const { error: err } = await supabase.from("stock_movimientos").insert(
       seleccionadas.map(f => ({
-        empresa_id: empresa,
+        empresa_id: empresaId,
         producto_id: f.producto_id!,
         tipo: "entrada",
         cantidad: f.cantidad,
@@ -243,7 +242,7 @@ function CargaInicialContent() {
 
   return (
     <>
-      <Nav empresaId={empresa} />
+      <Nav />
       <main style={container}>
         {/* Header */}
         <div style={pageHeader}>

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
-import type { Empresa, Cuartel, Maquinaria, Producto, Personal } from "@/lib/types";
+import { useEmpresa } from "@/lib/useEmpresa";
+import type { Cuartel, Maquinaria, Producto, Personal } from "@/lib/types";
 import { FUNCIONES_FITOSANITARIAS } from "@/lib/types";
 
 type CuartelRow       = { cuartel_id: string; superficie_ha: string };
@@ -21,15 +22,12 @@ type OTActiva         = {
 import { Suspense } from "react";
 function NuevaOTContent() {
   const router       = useRouter();
-  const searchParams = useSearchParams();
-  const empresaId    = searchParams.get("empresa") || "";
 
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState("");
 
   // Catálogos
-  const [empresas,      setEmpresas]      = useState<Empresa[]>([]);
   const [cuarteles,     setCuarteles]     = useState<Cuartel[]>([]);
   const [tractores,     setTractores]     = useState<Maquinaria[]>([]);
   const [implementos,   setImplementos]   = useState<Maquinaria[]>([]);
@@ -41,7 +39,7 @@ function NuevaOTContent() {
   const [stockComprometido, setStockComprometido] = useState<Map<string, ComprometidoInfo[]>>(new Map());
 
   // Cabecera
-  const [empresa,           setEmpresa]           = useState(empresaId);
+  const { empresaId: empresa } = useEmpresa();
   const [fechaSolicitud,    setFechaSolicitud]     = useState(new Date().toISOString().slice(0, 10));
   const [fechaAplicacion,   setFechaAplicacion]   = useState("");
   const [horaInicio,        setHoraInicio]         = useState("05:00");
@@ -70,9 +68,8 @@ function NuevaOTContent() {
       if (!user) { router.push("/login"); return; }
 
       const [
-        { data: emp }, { data: cua }, { data: mac }, { data: prod }, { data: pers }, { data: plagas },
+        { data: cua }, { data: mac }, { data: prod }, { data: pers }, { data: plagas },
       ] = await Promise.all([
-        supabase.from("empresas").select("*").order("nombre"),
         supabase.from("cuarteles").select("*").eq("activo", true).order("codigo"),
         supabase.from("maquinaria").select("*").eq("activo", true).order("codigo"),
         supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(5000),
@@ -80,7 +77,6 @@ function NuevaOTContent() {
         supabase.from("plagas_objetivos").select("*").eq("activo", true).order("tipo").order("nombre"),
       ]);
 
-      setEmpresas((emp as Empresa[]) || []);
       setCuarteles((cua as Cuartel[]) || []);
       const maq = (mac as Maquinaria[]) || [];
       setTractores(maq.filter(m => m.tipo === "tractor"));
@@ -88,7 +84,6 @@ function NuevaOTContent() {
       setProductos((prod as Producto[]) || []);
       setPersonal((pers as Personal[]) || []);
       setCatalogPlagas((plagas as CatalogPlaga[]) || []);
-      if (!empresa && emp?.length) setEmpresa((emp as Empresa[])[0].id);
       setLoading(false);
     };
     init();
@@ -328,7 +323,6 @@ function NuevaOTContent() {
   // ── Guardar ──────────────────────────────────────────────────────────────
   const handleSave = async (estado: "borrador" | "emitida") => {
     setError("");
-    if (!empresa) { setError("Selecciona una empresa."); return; }
     if (cuartelesOT.some(c => !c.cuartel_id)) { setError("Completa todos los cuarteles o elimina las filas vacías."); return; }
     if (productosOT.some(p => !p.producto_id || !p.dosis_real)) { setError("Cada producto necesita nombre y dosis."); return; }
 
@@ -413,16 +407,16 @@ function NuevaOTContent() {
     }
 
     setSaving(false);
-    router.push(`/ordenes/${otId}${empresa ? `?empresa=${empresa}` : ""}`);
+    router.push(`/ordenes/${otId}`);
   };
 
-  if (loading) return <><Nav empresaId={empresaId} /><main style={container}><p style={{ color: "#6b7280" }}>Cargando...</p></main></>;
+  if (loading) return <><Nav /><main style={container}><p style={{ color: "#6b7280" }}>Cargando...</p></main></>;
 
   const maquinadasDetalle = getMaquinadasDetalle();
 
   return (
     <>
-      <Nav empresaId={empresaId} />
+      <Nav />
       <main style={container}>
         <div style={pageHeader}>
           <h1 style={pageTitle}>Nueva Orden de Trabajo</h1>
@@ -433,12 +427,6 @@ function NuevaOTContent() {
           <section style={section}>
             <h2 style={sectionTitle}>Identificación</h2>
             <div className="grid-2">
-              <Field label="Empresa *">
-                <select value={empresa} onChange={e => setEmpresa(e.target.value)} style={inputStyle}>
-                  <option value="">— Seleccionar —</option>
-                  {empresas.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-                </select>
-              </Field>
               <Field label="Fecha aplicación">
                 <input type="date" value={fechaAplicacion} onChange={e => setFechaAplicacion(e.target.value)} style={inputStyle} />
               </Field>
@@ -761,7 +749,7 @@ function NuevaOTContent() {
           {error && <p style={errorStyle}>{error}</p>}
 
           <div style={footerRow}>
-            <button onClick={() => router.push(`/ordenes${empresaId ? `?empresa=${empresaId}` : ""}`)} style={cancelBtn} type="button">Cancelar</button>
+            <button onClick={() => router.push("/ordenes")} style={cancelBtn} type="button">Cancelar</button>
             <button onClick={() => handleSave("borrador")} style={draftBtn} disabled={saving} type="button">{saving ? "..." : "Guardar borrador"}</button>
             <button onClick={() => handleSave("emitida")} style={saveBtn} disabled={saving} type="button">{saving ? "Guardando..." : "Emitir OT"}</button>
           </div>

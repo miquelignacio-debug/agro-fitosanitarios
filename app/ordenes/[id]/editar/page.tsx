@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
-import type { Empresa, Cuartel, Maquinaria, Producto, Personal } from "@/lib/types";
+import { useEmpresa } from "@/lib/useEmpresa";
+import type { Cuartel, Maquinaria, Producto, Personal } from "@/lib/types";
 import { FUNCIONES_FITOSANITARIAS } from "@/lib/types";
 
 type CuartelRow   = { cuartel_id: string; superficie_ha: string };
@@ -16,8 +17,6 @@ type CatalogPlaga = { id: string; nombre: string; tipo: string; activo: boolean 
 function EditarOTContent() {
   const router       = useRouter();
   const params       = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
-  const empresaId    = searchParams.get("empresa") || "";
 
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
@@ -30,9 +29,8 @@ function EditarOTContent() {
   const [productos,     setProductos]     = useState<Producto[]>([]);
   const [personal,      setPersonal]      = useState<Personal[]>([]);
   const [catalogPlagas, setCatalogPlagas] = useState<CatalogPlaga[]>([]);
-  const [empresa,       setEmpresa]       = useState(empresaId);
+  const { empresaId: empresa } = useEmpresa();
   const [stockProductoIds, setStockProductoIds] = useState<Set<string>>(new Set());
-  const [empresas,      setEmpresas]      = useState<Empresa[]>([]);
 
   // Campos de cabecera
   const [fechaSolicitud,    setFechaSolicitud]     = useState("");
@@ -63,9 +61,8 @@ function EditarOTContent() {
       if (!user) { router.push("/login"); return; }
 
       const [
-        { data: emp }, { data: cua }, { data: mac }, { data: prod }, { data: pers }, { data: plagas },
+        { data: cua }, { data: mac }, { data: prod }, { data: pers }, { data: plagas },
       ] = await Promise.all([
-        supabase.from("empresas").select("*").order("nombre"),
         supabase.from("cuarteles").select("*").eq("activo", true).order("codigo"),
         supabase.from("maquinaria").select("*").eq("activo", true).order("codigo"),
         supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(5000),
@@ -73,7 +70,6 @@ function EditarOTContent() {
         supabase.from("plagas_objetivos").select("*").eq("activo", true).order("tipo").order("nombre"),
       ]);
 
-      setEmpresas((emp as Empresa[]) || []);
       setCuarteles((cua as Cuartel[]) || []);
       const maq = (mac as Maquinaria[]) || [];
       setTractores(maq.filter(m => m.tipo === "tractor"));
@@ -94,12 +90,10 @@ function EditarOTContent() {
 
       // Solo editable en borrador o emitida
       if (ot.estado !== "borrador" && ot.estado !== "emitida") {
-        router.push(`/ordenes/${params.id}${empresaId ? `?empresa=${empresaId}` : ""}`);
+        router.push(`/ordenes/${params.id}`);
         return;
       }
 
-      const eid = ot.empresa_id || empresaId;
-      setEmpresa(eid);
       setFechaSolicitud(ot.fecha_solicitud || "");
       setFechaAplicacion(ot.fecha_aplicacion || "");
       setHoraInicio(ot.hora_inicio || "05:00");
@@ -354,20 +348,20 @@ function EditarOTContent() {
     ]);
 
     setSaving(false);
-    router.push(`/ordenes/${params.id}${empresaId ? `?empresa=${empresaId}` : ""}`);
+    router.push(`/ordenes/${params.id}`);
   };
 
-  if (loading) return <><Nav empresaId={empresaId} /><main style={container}><p style={{ color: "#6b7280" }}>Cargando...</p></main></>;
+  if (loading) return <><Nav /><main style={container}><p style={{ color: "#6b7280" }}>Cargando...</p></main></>;
 
   const maquinadasDetalle = getMaquinadasDetalle();
 
   return (
     <>
-      <Nav empresaId={empresaId} />
+      <Nav />
       <main style={container}>
         <div style={pageHeader}>
           <div>
-            <button onClick={() => router.push(`/ordenes/${params.id}${empresaId ? `?empresa=${empresaId}` : ""}`)} style={backBtn}>← Volver a la OT</button>
+            <button onClick={() => router.push(`/ordenes/${params.id}`)} style={backBtn}>← Volver a la OT</button>
             <h1 style={pageTitle}>Editar OT</h1>
           </div>
         </div>
@@ -377,11 +371,6 @@ function EditarOTContent() {
           <section style={section}>
             <h2 style={sectionTitle}>Identificación</h2>
             <div style={grid2}>
-              <Field label="Empresa">
-                <select value={empresa} onChange={e => setEmpresa(e.target.value)} style={inputStyle}>
-                  {empresas.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-                </select>
-              </Field>
               <Field label="Fecha aplicación">
                 <input type="date" value={fechaAplicacion} onChange={e => setFechaAplicacion(e.target.value)} style={inputStyle} />
               </Field>
@@ -609,7 +598,7 @@ function EditarOTContent() {
           {error && <p style={{ color: "#dc2626", fontSize: "13px", padding: "0 24px 16px" }}>{error}</p>}
 
           <div style={footerRow}>
-            <button onClick={() => router.push(`/ordenes/${params.id}${empresaId ? `?empresa=${empresaId}` : ""}`)} style={cancelBtn} type="button">Cancelar</button>
+            <button onClick={() => router.push(`/ordenes/${params.id}`)} style={cancelBtn} type="button">Cancelar</button>
             <button onClick={handleSave} style={saveBtn} disabled={saving} type="button">
               {saving ? "Guardando..." : "Guardar cambios"}
             </button>

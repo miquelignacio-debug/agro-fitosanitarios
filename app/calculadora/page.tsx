@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useMemo, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
-import type { Empresa, Cuartel, Producto } from "@/lib/types";
+import { useEmpresa } from "@/lib/useEmpresa";
+import type { Cuartel, Producto } from "@/lib/types";
 
 type CalcRow   = { cuartel_id: string; superficie_ha: string; mojamiento: string };
 type RowResult = { cuartel: Cuartel | undefined; sup: number; agua: number; cantidad: number };
@@ -12,11 +13,8 @@ type AltResult = { producto: Producto; stock: number };
 
 function CalculadoraContent() {
   const router       = useRouter();
-  const searchParams = useSearchParams();
-  const empresaParam = searchParams.get("empresa") || "";
+  const { empresaId } = useEmpresa();
 
-  const [empresas,  setEmpresas]  = useState<Empresa[]>([]);
-  const [empresaId, setEmpresaId] = useState(empresaParam);
   const [cuarteles, setCuarteles] = useState<Cuartel[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [stockMap,  setStockMap]  = useState<Map<string, number>>(new Map());
@@ -33,14 +31,8 @@ function CalculadoraContent() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const [{ data: emp }, { data: prod }] = await Promise.all([
-        supabase.from("empresas").select("*").order("nombre"),
-        supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(5000),
-      ]);
-      setEmpresas((emp as Empresa[]) || []);
+      const { data: prod } = await supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(5000);
       setProductos((prod as Producto[]) || []);
-      const eid = empresaParam || (emp as Empresa[])?.[0]?.id || "";
-      setEmpresaId(eid);
       setLoading(false);
     };
     init();
@@ -152,25 +144,15 @@ function CalculadoraContent() {
   const productoSinStock  = productos.filter(p => !stockMap.has(p.id));
   const mostrarAgua       = resultado?.validas.some(r => r.agua > 0);
 
-  if (loading) return <><Nav empresaId={empresaId} /><main style={container}><p style={{ color: "#6b7280" }}>Cargando...</p></main></>;
+  if (loading) return <><Nav /><main style={container}><p style={{ color: "#6b7280" }}>Cargando...</p></main></>;
 
   return (
     <>
-      <Nav empresaId={empresaId} />
+      <Nav />
       <main style={container}>
         <div style={pageHeader}>
           <h1 style={pageTitle}>Calculadora de productos</h1>
           <p style={pageSubtitle}>Calculá el total necesario y verificá el stock antes de armar la OT</p>
-        </div>
-
-        {/* Empresa */}
-        <div style={empresaBar}>
-          {empresas.map(e => (
-            <button key={e.id} onClick={() => { setEmpresaId(e.id); setProductoId(""); setDosis(""); }}
-              style={{ ...empresaBtn, ...(e.id === empresaId ? empresaBtnActive : {}) }}>
-              {e.nombre}
-            </button>
-          ))}
         </div>
 
         <div style={mainGrid}>
@@ -442,9 +424,6 @@ const container: React.CSSProperties        = { maxWidth: "1300px", margin: "0 a
 const pageHeader: React.CSSProperties       = { marginBottom: "20px" };
 const pageTitle: React.CSSProperties        = { fontSize: "24px", fontWeight: 800, color: "#1a4731" };
 const pageSubtitle: React.CSSProperties     = { fontSize: "13px", color: "#6b7280", marginTop: "4px" };
-const empresaBar: React.CSSProperties       = { display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" };
-const empresaBtn: React.CSSProperties       = { padding: "8px 18px", borderRadius: "999px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: "pointer" };
-const empresaBtnActive: React.CSSProperties = { background: "#1a4731", border: "1.5px solid #1a4731", color: "#fff" };
 const mainGrid: React.CSSProperties         = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(460px, 1fr))", gap: "20px", alignItems: "start" };
 const col: React.CSSProperties              = { display: "flex", flexDirection: "column", gap: "16px" };
 const card: React.CSSProperties             = { background: "#fff", borderRadius: "16px", border: "1px solid #e5e7eb", padding: "20px 24px" };

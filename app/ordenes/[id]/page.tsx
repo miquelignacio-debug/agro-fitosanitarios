@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
@@ -28,6 +28,7 @@ type OTProducto = {
     especies_autorizadas: string[] | null;
     unidad_dosis: string | null;
     unidad_bodega: "lt" | "kg" | null;
+    toxicidad_abejas: string | null;
   };
 };
 
@@ -86,9 +87,7 @@ function calcDosisMaq(dosis: number, unidad: string, mojSol: number, capacidadLt
 function OTDetalleContent() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
-  const empresaId = searchParams.get("empresa") || "";
-  const { isAdmin, isOperador } = useRol();
+  const { isAdmin, isEncargado } = useRol();
 
   const [ot, setOT] = useState<OTCompleta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,6 +96,7 @@ function OTDetalleContent() {
   const [transitioning, setTransitioning] = useState(false);
   const [confirmAnular,   setConfirmAnular]   = useState(false);
   const [confirmEliminar, setConfirmEliminar] = useState(false);
+  const [avisoApicola,    setAvisoApicola]    = useState(false);
   const [notas, setNotas] = useState("");
 
   // Datos de ejecución (para finalizar)
@@ -109,7 +109,7 @@ function OTDetalleContent() {
   const [enjuage,        setEnjuage]        = useState("");
   const [showEjecucion,  setShowEjecucion]  = useState(false);
 
-  const PRODUCTOS_SELECT = "id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, dosis_por_maquinada, producto:productos(nombre_comercial, ingrediente_activo, concentracion_ia, formulacion, especies_autorizadas, unidad_dosis, unidad_bodega)";
+  const PRODUCTOS_SELECT = "id, producto_id, dosis_real, dosis_unidad, carencia_dias, rei_horas, fecha_viable, consumo_total, dosis_por_maquinada, producto:productos(nombre_comercial, ingrediente_activo, concentracion_ia, formulacion, especies_autorizadas, unidad_dosis, unidad_bodega, toxicidad_abejas)";
   const APLICADORES_SELECT_V10 = "id, cantidad_maquinadas, operador:operadores(nombre), personal:personal!personal_id(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo, capacidad_lt)";
   const APLICADORES_SELECT_FALLBACK = "id, cantidad_maquinadas, operador:operadores(nombre), tractor:maquinaria!tractor_id(codigo), pulverizador:maquinaria!pulverizador_id(codigo, capacidad_lt)";
 
@@ -153,6 +153,16 @@ function OTDetalleContent() {
   const handleTransicion = async (nuevoEstado: OrdenTrabajo["estado"]) => {
     if (nuevoEstado === "anulada" && !confirmAnular) { setConfirmAnular(true); return; }
     setConfirmAnular(false);
+    // Ley Apícola N° 20.786: intercept "emitida" if any product is tóxico/moderadamente_tóxico/sin_clasificar
+    if (nuevoEstado === "emitida" && !avisoApicola && ot) {
+      const necesitaAviso = ot.ot_productos.some(p =>
+        !p.producto?.toxicidad_abejas ||
+        p.producto.toxicidad_abejas === "toxico" ||
+        p.producto.toxicidad_abejas === "moderadamente_toxico"
+      );
+      if (necesitaAviso) { setAvisoApicola(true); return; }
+    }
+    setAvisoApicola(false);
     setTransError("");
     setTransitioning(true);
     const { error } = await supabase.from("ordenes_trabajo")
@@ -393,17 +403,17 @@ function OTDetalleContent() {
 
     if (delError) { setTransError(`Error al eliminar: ${delError.message}`); setTransitioning(false); return; }
 
-    router.push(`/ordenes${empresaId ? `?empresa=${empresaId}` : ""}`);
+    router.push("/ordenes");
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
-  if (loading) return <><Nav empresaId={empresaId} /><main style={container}><p style={{ color: "#6b7280" }}>Cargando...</p></main></>;
+  if (loading) return <><Nav /><main style={container}><p style={{ color: "#6b7280" }}>Cargando...</p></main></>;
 
   if (pageError) return (
     <>
-      <Nav empresaId={empresaId} />
+      <Nav />
       <main style={container}>
-        <button onClick={() => router.push(`/ordenes${empresaId ? `?empresa=${empresaId}` : ""}`)} style={backBtn}>← Volver</button>
+        <button onClick={() => router.push("/ordenes")} style={backBtn}>← Volver</button>
         <div style={{ marginTop: "20px", padding: "16px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "10px", color: "#dc2626", fontSize: "14px" }}>
           <strong>Error:</strong> {pageError}
           <br /><br />
@@ -422,19 +432,19 @@ function OTDetalleContent() {
   // otEditable: admin puede editar borrador o emitida; operador solo borrador
   const otEditable     = isAdmin
     ? (ot.estado === "borrador" || ot.estado === "emitida")
-    : isOperador && ot.estado === "borrador";
+    : isEncargado && ot.estado === "borrador";
   const estaFinalizada = ot.estado === "finalizada";
   const estaAnulada    = ot.estado === "anulada";
 
   return (
     <>
-      <Nav empresaId={empresaId} />
+      <Nav />
       <main style={container}>
 
         {/* ── Header ── */}
         <div style={pageHeader}>
           <div>
-            <button onClick={() => router.push(`/ordenes${empresaId ? `?empresa=${empresaId}` : ""}`)} style={backBtn}>← Volver</button>
+            <button onClick={() => router.push("/ordenes")} style={backBtn}>← Volver</button>
             <h1 style={pageTitle}>OT N° {ot.numero}</h1>
             <div style={{ display: "flex", gap: "10px", alignItems: "center", marginTop: "6px", flexWrap: "wrap" }}>
               <span style={{ ...estadoBadge, background: estadoColor + "22", color: estadoColor, borderColor: estadoColor + "55" }}>
@@ -451,14 +461,14 @@ function OTDetalleContent() {
 
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-start" }}>
             {/* Imprimir: admin/viewer siempre; operador solo desde emitida */}
-            {!estaAnulada && (isAdmin || !isOperador || ot.estado === "emitida" || ot.estado === "finalizada") && (
+            {!estaAnulada && (isAdmin || !isEncargado || ot.estado !== "borrador") && (
               <button onClick={() => generateOTPdf(ot as unknown as Parameters<typeof generateOTPdf>[0])} style={printBtn}>
                 Imprimir OT
               </button>
             )}
             {/* Editar: admin en borrador/emitida; operador solo en borrador */}
             {otEditable && (
-              <button onClick={() => router.push(`/ordenes/${ot.id}/editar${empresaId ? `?empresa=${empresaId}` : ""}`)} style={secondaryBtn}>
+              <button onClick={() => router.push(`/ordenes/${ot.id}/editar`)} style={secondaryBtn}>
                 Editar OT
               </button>
             )}
@@ -479,7 +489,7 @@ function OTDetalleContent() {
               </button>
             )}
             {/* Finalizar: admin o operador */}
-            {transiciones.includes("finalizada") && (isAdmin || isOperador) && (
+            {transiciones.includes("finalizada") && (isAdmin || isEncargado) && (
               <button onClick={() => setShowEjecucion(true)} style={primaryBtn}>
                 Registrar finalización
               </button>
@@ -488,7 +498,7 @@ function OTDetalleContent() {
             {transiciones.filter(t => t !== "finalizada").map(t => {
               if (t === "emitida"     && !isAdmin) return null; // aprobar: solo admin
               if (t === "anulada"     && !isAdmin) return null; // anular: solo admin
-              if (t === "en_ejecucion" && !isAdmin && !isOperador) return null;
+              if (t === "en_ejecucion" && !isAdmin && !isEncargado) return null;
               return (
                 <button key={t} onClick={() => handleTransicion(t)}
                   style={t === "anulada" ? dangerBtn : secondaryBtn} disabled={transitioning}>
@@ -551,11 +561,110 @@ function OTDetalleContent() {
           </div>
         )}
 
+        {/* ── Aviso Apícola — Ley N° 20.786 ── */}
+        {avisoApicola && ot && (() => {
+          const productosConAviso = ot.ot_productos.filter(p =>
+            !p.producto?.toxicidad_abejas ||
+            p.producto.toxicidad_abejas === "toxico" ||
+            p.producto.toxicidad_abejas === "moderadamente_toxico"
+          );
+          const deadline = ot.fecha_aplicacion
+            ? (() => {
+                const d = new Date(ot.fecha_aplicacion + "T12:00:00");
+                d.setDate(d.getDate() - 2);
+                return d.toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+              })()
+            : null;
+          return (
+            <div style={{ padding: "16px 18px", background: "#fffbeb", border: "2px solid #fbbf24", borderRadius: "10px", marginBottom: "12px" }}>
+              <div style={{ fontWeight: 700, fontSize: "14px", color: "#92400e", marginBottom: "8px" }}>
+                🐝 Aviso Apícola — Ley N° 20.786
+              </div>
+              <p style={{ fontSize: "13px", color: "#78350f", marginBottom: "10px" }}>
+                Esta OT incluye productos que requieren notificación al SAG y a los apicultores inscritos en el SIPEC con <strong>al menos 48 horas de anticipación</strong>.
+              </p>
+              <ul style={{ margin: "0 0 10px 18px", padding: 0, fontSize: "13px", color: "#92400e" }}>
+                {productosConAviso.map(p => (
+                  <li key={p.id}>
+                    <strong>{p.producto.nombre_comercial}</strong>
+                    {p.producto.toxicidad_abejas
+                      ? ` — ${p.producto.toxicidad_abejas === "toxico" ? "Tóxico para abejas" : "Moderadamente tóxico"}`
+                      : " — Sin clasificar (aplicar criterio preventivo)"}
+                  </li>
+                ))}
+              </ul>
+              {deadline && (
+                <p style={{ fontSize: "13px", color: "#78350f", marginBottom: "12px" }}>
+                  Plazo máximo para enviar el aviso: <strong>{deadline}</strong>
+                </p>
+              )}
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button onClick={() => setAvisoApicola(false)} style={cancelSmall}>Cancelar</button>
+                <button
+                  onClick={() => handleTransicion("emitida")}
+                  style={{ padding: "7px 16px", background: "#d97706", color: "#fff", border: "none", borderRadius: "7px", fontWeight: 700, fontSize: "13px", cursor: "pointer" }}
+                >
+                  Confirmar aviso y emitir OT
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
         {transError && (
           <div style={{ padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "8px", fontSize: "13px", color: "#dc2626", marginBottom: "12px" }}>
             {transError}
           </div>
         )}
+
+        {/* ── Banner Ley Apícola para órdenes ya emitidas ── */}
+        {(ot.estado === "emitida" || ot.estado === "en_ejecucion") && (() => {
+          const productosConAviso = ot.ot_productos.filter(p =>
+            !p.producto?.toxicidad_abejas ||
+            p.producto.toxicidad_abejas === "toxico" ||
+            p.producto.toxicidad_abejas === "moderadamente_toxico"
+          );
+          if (productosConAviso.length === 0) return null;
+          const deadline = ot.fecha_aplicacion
+            ? (() => {
+                const d = new Date(ot.fecha_aplicacion + "T12:00:00");
+                d.setDate(d.getDate() - 2);
+                return d.toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+              })()
+            : null;
+          const fechaAplicacion = ot.fecha_aplicacion
+            ? new Date(ot.fecha_aplicacion + "T12:00:00")
+            : null;
+          const vencido = fechaAplicacion ? new Date() > fechaAplicacion : false;
+          if (vencido) return null;
+          return (
+            <div style={{ padding: "14px 18px", background: "#fffbeb", border: "1.5px solid #fbbf24", borderRadius: "10px", marginBottom: "16px" }}>
+              <div style={{ fontWeight: 700, fontSize: "13px", color: "#92400e", marginBottom: "6px" }}>
+                🐝 Aviso Apícola — Ley N° 20.786
+              </div>
+              <p style={{ fontSize: "12px", color: "#78350f", margin: "0 0 8px" }}>
+                Notificar al SAG y apicultores SIPEC con 48h de anticipación:
+              </p>
+              <ul style={{ margin: "0 0 8px 16px", padding: 0, fontSize: "12px", color: "#92400e" }}>
+                {productosConAviso.map(p => (
+                  <li key={p.id}>
+                    <strong>{p.producto.nombre_comercial}</strong>
+                    {p.producto.toxicidad_abejas === "toxico"
+                      ? " — Tóxico"
+                      : p.producto.toxicidad_abejas === "moderadamente_toxico"
+                      ? " — Mod. tóxico"
+                      : " — Sin clasificar (criterio preventivo)"}
+                  </li>
+                ))}
+              </ul>
+              {deadline && (
+                <p style={{ fontSize: "12px", color: "#78350f", margin: 0 }}>
+                  Plazo: <strong>{deadline}</strong>
+                </p>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── Detalle en dos columnas ── */}
         <div className="grid-2">
@@ -663,7 +772,7 @@ function OTDetalleContent() {
                 : <Row label="Solicitado" value="— (no especificado)" />}
               {ot.mojamiento_real_ltha != null && <Row label="Real" value={`${ot.mojamiento_real_ltha} lt/ha`} />}
               {/* Campo editable para que el operador declare el mojamiento real antes de finalizar */}
-              {ot.estado === "en_ejecucion" && (isAdmin || isOperador) && (
+              {ot.estado === "en_ejecucion" && (isAdmin || isEncargado) && (
                 <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #f3f4f6" }}>
                   <label style={{ fontSize: "12px", fontWeight: 700, color: "#374151", display: "block", marginBottom: "5px" }}>
                     {ot.mojamiento_real_ltha != null ? "Actualizar mojamiento real (lt/ha)" : "Declarar mojamiento real (lt/ha)"}
