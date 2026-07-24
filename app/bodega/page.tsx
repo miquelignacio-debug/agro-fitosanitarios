@@ -41,6 +41,47 @@ type SalidaVentaForm = {
   fecha: string;
 };
 
+type OtPendiente = {
+  id: string;
+  estado: string;
+  mojamiento_solicitado_ltha: number | null;
+  campo_id: string | null;
+  ot_productos: Array<{ producto_id: string; dosis_real: number; dosis_unidad: string; producto: { unidad_bodega: "lt" | "kg" | null } }>;
+  ot_cuarteles: Array<{ superficie_ha: number }>;
+};
+
+type OtDesviacion = {
+  id: string;
+  numero: number;
+  mojamiento_solicitado_ltha: number;
+  mojamiento_real_ltha: number;
+  fecha_aplicacion: string | null;
+  responsable: { id: string; nombre: string } | null;
+  ot_productos: Array<{ producto_id: string; dosis_real: number; dosis_unidad: string; producto: { nombre_comercial: string; unidad_bodega: "lt" | "kg" | null } }>;
+  ot_cuarteles: Array<{ superficie_ha: number }>;
+};
+
+type OperadorStats = {
+  id: string;
+  nombre: string;
+  nOts: number;
+  avgDesviacionPct: number;
+  totalExtraLt: number;
+  impactoEconomico: number;
+  ots: Array<{ id: string; numero: number; fecha: string | null; desviacionPct: number; extraLt: number; impacto: number }>;
+};
+
+function calcConsumoPlaneado(dosis: number, dosisUnidad: string, totalHa: number, mojamientoLtha: number): number {
+  const u = dosisUnidad.toLowerCase().replace(/\s+/g, "");
+  const volTotal = totalHa * mojamientoLtha;
+  if (u.includes("/100lt") || u.includes("/100l")) return dosis * volTotal / 100 / 1000;
+  if (u.startsWith("lt/ha") || u.startsWith("l/ha")) return dosis * totalHa;
+  if (u.startsWith("cc/ha") || u.startsWith("ml/ha")) return dosis * totalHa / 1000;
+  if (u.startsWith("kg/ha")) return dosis * totalHa;
+  if (u.startsWith("g/ha")) return dosis * totalHa / 1000;
+  return 0;
+}
+
 const TIPOS_SUMA = new Set(["entrada", "transferencia_entrada", "ajuste_entrada"]);
 
 function BodegaContent() {
@@ -54,7 +95,7 @@ function BodegaContent() {
   const [stock, setStock] = useState<StockRow[]>([]);
   const [movimientos, setMovimientos] = useState<StockMovimiento[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"stock" | "movimientos">("stock");
+  const [tab, setTab] = useState<"stock" | "movimientos" | "desviacion">("stock");
   const [stockSearch,  setStockSearch]  = useState("");
   const [stockFuncion, setStockFuncion] = useState("");
   const [stockBajo,    setStockBajo]    = useState(false);
@@ -80,6 +121,10 @@ function BodegaContent() {
   const [movSearch, setMovSearch] = useState("");
   const [movDesde,  setMovDesde]  = useState("");
   const [movHasta,  setMovHasta]  = useState("");
+  const [otsPendientes, setOtsPendientes] = useState<OtPendiente[]>([]);
+  const [otsDesviacion, setOtsDesviacion] = useState<OtDesviacion[]>([]);
+  const [costosMap,     setCostosMap]     = useState<Map<string, number>>(new Map());
+  const [desAnio,       setDesAnio]       = useState(new Date().getFullYear());
   const [salidaVentaPrecio, setSalidaVentaPrecio] = useState<number | null>(null);
   const [salidaVentaForm,   setSalidaVentaForm]   = useState<SalidaVentaForm>({
     productoId: "", cantidad: "", tipo: "salida_venta",
@@ -116,12 +161,37 @@ function BodegaContent() {
       .select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*)")
       .eq("empresa_id", eid);
 
-    const [{ data: aggData }, { data: mv }] = await Promise.all([
+    const baseOtsPend = supabase
+      .from("ordenes_trabajo")
+      .select("id, estado, mojamiento_solicitado_ltha, campo_id, ot_productos(producto_id, dosis_real, dosis_unidad, producto:productos(unidad_bodega)), ot_cuarteles(superficie_ha)")
+      .eq("empresa_id", eid)
+      .in("estado", ["borrador", "emitida", "en_ejecucion"]);
+
+    const baseOtsDes = supabase
+      .from("ordenes_trabajo")
+      .select("id, numero, mojamiento_solicitado_ltha, mojamiento_real_ltha, fecha_aplicacion, responsable:personal!responsable_id(id, nombre), ot_cuarteles(superficie_ha), ot_productos(producto_id, dosis_real, dosis_unidad, producto:productos(nombre_comercial, unidad_bodega))")
+      .eq("empresa_id", eid)
+      .eq("estado", "finalizada")
+      .not("mojamiento_solicitado_ltha", "is", null)
+      .not("mojamiento_real_ltha", "is", null)
+      .gte("fecha_aplicacion", `${new Date().getFullYear() - 1}-01-01`);
+
+    const baseCostos = supabase
+      .from("stock_movimientos")
+      .select("producto_id, cantidad, precio_unitario")
+      .eq("empresa_id", eid)
+      .eq("tipo", "entrada")
+      .not("precio_unitario", "is", null);
+
+    const [{ data: aggData }, { data: mv }, { data: otsPend }, { data: otsDes }, { data: costosData }] = await Promise.all([
       (campoId ? baseAgg.eq("campo_id", campoId) : baseAgg),
       (campoId ? baseMv.eq("campo_id", campoId) : baseMv)
         .order("fecha", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(500),
+      (campoId ? baseOtsPend.eq("campo_id", campoId) : baseOtsPend),
+      (campoId ? baseOtsDes.eq("campo_id", campoId) : baseOtsDes),
+      baseCostos,
     ]);
 
     // Build campo-specific stock from aggregated movements
@@ -139,6 +209,19 @@ function BodegaContent() {
       a.producto.nombre_comercial.localeCompare(b.producto.nombre_comercial)
     );
 
+    // Weighted avg cost per product (empresa-level, for desviación valuation)
+    const costoAcc = new Map<string, { v: number; q: number }>();
+    for (const c of (costosData ?? []) as unknown as { producto_id: string; cantidad: number; precio_unitario: number }[]) {
+      const acc = costoAcc.get(c.producto_id) ?? { v: 0, q: 0 };
+      acc.v += Number(c.cantidad) * Number(c.precio_unitario);
+      acc.q += Number(c.cantidad);
+      costoAcc.set(c.producto_id, acc);
+    }
+    const newCostosMap = new Map<string, number>();
+    for (const [pid, acc] of costoAcc) {
+      if (acc.q > 0) newCostosMap.set(pid, acc.v / acc.q);
+    }
+
     // Cargar números de OT por separado (ot_id no tiene FK explícito, el join inline falla)
     const rawMv = (mv as StockMovimiento[]) || [];
     const otIds = [...new Set(rawMv.filter(m => m.ot_id).map(m => m.ot_id!))];
@@ -155,6 +238,9 @@ function BodegaContent() {
 
     setStock(stockRows);
     setMovimientos(mvsConOt as StockMovimiento[]);
+    setOtsPendientes((otsPend ?? []) as unknown as OtPendiente[]);
+    setOtsDesviacion((otsDes ?? []) as unknown as OtDesviacion[]);
+    setCostosMap(newCostosMap);
     setLoading(false);
   };
 
@@ -190,6 +276,54 @@ function BodegaContent() {
     stockFinalMap.set(m.id, curr);
     runningBal.set(pid, curr + (TIPOS_SUMA.has(m.tipo) ? -Number(m.cantidad) : Number(m.cantidad)));
   }
+
+  // Stock proyectado: consume pending OTs
+  const proyeccionMap = new Map<string, number>();
+  for (const ot of otsPendientes) {
+    const totalHa = ot.ot_cuarteles.reduce((s, c) => s + Number(c.superficie_ha), 0);
+    const moj = Number(ot.mojamiento_solicitado_ltha ?? 0);
+    for (const p of ot.ot_productos) {
+      const consumo = calcConsumoPlaneado(Number(p.dosis_real), p.dosis_unidad, totalHa, moj);
+      proyeccionMap.set(p.producto_id, (proyeccionMap.get(p.producto_id) ?? 0) + consumo);
+    }
+  }
+
+  // Desviación: filter by selected year and group by responsable
+  const desOts = otsDesviacion.filter(ot => ot.fecha_aplicacion?.slice(0, 4) === String(desAnio));
+  const operadorMap = new Map<string, OperadorStats>();
+  for (const ot of desOts) {
+    const rid = ot.responsable?.id ?? "__none__";
+    const nombre = ot.responsable?.nombre ?? "Sin responsable";
+    const totalHa = ot.ot_cuarteles.reduce((s, c) => s + Number(c.superficie_ha), 0);
+    const mojPlan = Number(ot.mojamiento_solicitado_ltha);
+    const mojReal = Number(ot.mojamiento_real_ltha);
+    const desviacionPct = mojPlan > 0 ? (mojReal - mojPlan) / mojPlan * 100 : 0;
+    const extraLt = (mojReal - mojPlan) * totalHa;
+    let impacto = 0;
+    for (const p of ot.ot_productos) {
+      const u = p.dosis_unidad.toLowerCase().replace(/\s+/g, "");
+      if (u.includes("/100lt") || u.includes("/100l")) {
+        const extraProd = Number(p.dosis_real) * Math.abs(extraLt) / 100 / 1000;
+        const precio = costosMap.get(p.producto_id) ?? 0;
+        impacto += extraProd * precio * (extraLt < 0 ? -1 : 1);
+      }
+    }
+    if (!operadorMap.has(rid)) {
+      operadorMap.set(rid, { id: rid, nombre, nOts: 0, avgDesviacionPct: 0, totalExtraLt: 0, impactoEconomico: 0, ots: [] });
+    }
+    const stats = operadorMap.get(rid)!;
+    stats.nOts += 1;
+    stats.totalExtraLt += extraLt;
+    stats.impactoEconomico += impacto;
+    stats.ots.push({ id: ot.id, numero: ot.numero, fecha: ot.fecha_aplicacion, desviacionPct, extraLt, impacto });
+  }
+  for (const [, s] of operadorMap) {
+    s.avgDesviacionPct = s.ots.reduce((sum, o) => sum + o.desviacionPct, 0) / s.ots.length;
+  }
+  const operadorStats = [...operadorMap.values()].sort((a, b) => Math.abs(b.impactoEconomico) - Math.abs(a.impactoEconomico));
+
+  const totalImpacto = operadorStats.reduce((s, o) => s + o.impactoEconomico, 0);
+  const totalExtraLt = operadorStats.reduce((s, o) => s + o.totalExtraLt, 0);
 
   const openTransf = async () => {
     const otrosCampos = allCampos.filter(c => c.id !== campoId);
@@ -403,6 +537,12 @@ function BodegaContent() {
             style={{ ...tabBtn, ...(tab === "movimientos" ? tabBtnActive : {}) }}
           >
             Movimientos
+          </button>
+          <button
+            onClick={() => setTab("desviacion")}
+            style={{ ...tabBtn, ...(tab === "desviacion" ? tabBtnActive : {}) }}
+          >
+            Desviación
           </button>
         </div>
 
@@ -696,7 +836,7 @@ function BodegaContent() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Producto", "N° Registro", "Ingrediente activo", "Función", "Stock disponible", "Alerta"].map((h) => (
+                  {["Producto", "N° Registro", "Ingrediente activo", "Función", "Stock disponible", "Stock proyectado", "Alerta"].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -713,6 +853,19 @@ function BodegaContent() {
                       <td style={{ ...td, fontWeight: 700, color: bajo ? "#dc2626" : "#15803d" }}>
                         {displayStock(Number(s.cantidad_disponible), s.producto.unidad_bodega)}
                       </td>
+                      {(() => {
+                        const pendiente = proyeccionMap.get(s.producto_id) ?? 0;
+                        const proyectado = Number(s.cantidad_disponible) - pendiente;
+                        const min = s.producto.stock_minimo != null ? s.producto.stock_minimo : 5;
+                        const color = proyectado < 0 ? "#dc2626" : proyectado < min ? "#d97706" : "#6b7280";
+                        return (
+                          <td style={{ ...td, fontWeight: 600, color }}>
+                            {pendiente > 0
+                              ? <>{displayStock(proyectado, s.producto.unidad_bodega)}<span style={{ fontSize: "10px", display: "block", color: "#9ca3af" }}>−{displayStock(pendiente, s.producto.unidad_bodega)} OTs</span></>
+                              : <span style={{ color: "#9ca3af" }}>—</span>}
+                          </td>
+                        );
+                      })()}
                       <td style={td}>
                         {bajo && (
                           <span style={alertaBadge}>⚠️ Bajo stock</span>
@@ -723,7 +876,7 @@ function BodegaContent() {
                 })}
                 {stock.length === 0 && (
                   <tr>
-                    <td colSpan={6} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
+                    <td colSpan={7} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
                       Sin movimientos de stock para esta empresa.
                     </td>
                   </tr>
@@ -732,7 +885,7 @@ function BodegaContent() {
             </table>
             </div>
           </>
-        ) : (
+        ) : tab === "movimientos" ? (
           <>
           <div style={{ display: "flex", gap: "10px", marginBottom: "14px", flexWrap: "wrap", alignItems: "center" }}>
             <input
@@ -859,6 +1012,143 @@ function BodegaContent() {
             )}
           </div>
           </>
+        ) : (
+          <>
+          {/* ── Filtros ────────────────────────────────────── */}
+          <div style={{ display: "flex", gap: "16px", marginBottom: "20px", alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div>
+              <label style={{ fontSize: "11px", fontWeight: 700, color: "#6b7280", display: "block", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.04em" }}>Año</label>
+              <select value={desAnio} onChange={e => setDesAnio(Number(e.target.value))} style={filterSelect}>
+                {[0, 1, 2].map(i => { const y = new Date().getFullYear() - i; return <option key={y} value={y}>{y}</option>; })}
+              </select>
+            </div>
+            {/* Summary chips */}
+            {desOts.length > 0 && (
+              <>
+                <div style={summaryChip}>
+                  <span style={{ fontSize: "11px", color: "#6b7280" }}>OTs analizadas</span>
+                  <span style={{ fontSize: "20px", fontWeight: 800, color: "#1a4731" }}>{desOts.length}</span>
+                </div>
+                <div style={summaryChip}>
+                  <span style={{ fontSize: "11px", color: "#6b7280" }}>Vol. extra/menos total</span>
+                  <span style={{ fontSize: "20px", fontWeight: 800, color: totalExtraLt > 0 ? "#dc2626" : totalExtraLt < 0 ? "#15803d" : "#374151" }}>
+                    {totalExtraLt > 0 ? "+" : ""}{totalExtraLt.toLocaleString("es-CL", { maximumFractionDigits: 0 })} Lt
+                  </span>
+                </div>
+                <div style={summaryChip}>
+                  <span style={{ fontSize: "11px", color: "#6b7280" }}>Impacto económico total</span>
+                  <span style={{ fontSize: "20px", fontWeight: 800, color: totalImpacto > 0 ? "#dc2626" : totalImpacto < 0 ? "#15803d" : "#374151" }}>
+                    {totalImpacto !== 0 ? `${totalImpacto > 0 ? "+" : ""}$${Math.abs(totalImpacto).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "$0"}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ── Tabla por responsable ───────────────────────── */}
+          <h3 style={{ fontSize: "13px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>Por responsable</h3>
+          <div style={{ overflowX: "auto", marginBottom: "28px" }}>
+            <table style={table}>
+              <thead>
+                <tr>
+                  {["Responsable", "OTs", "Desvíación mojamiento (prom.)", "Vol. extra / menos", "Impacto económico"].map(h => (
+                    <th key={h} style={th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {operadorStats.map(s => (
+                  <tr key={s.id}>
+                    <td style={{ ...td, fontWeight: 700 }}>{s.nombre}</td>
+                    <td style={{ ...td, textAlign: "center" }}>{s.nOts}</td>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 700,
+                      color: Math.abs(s.avgDesviacionPct) < 5 ? "#15803d" : Math.abs(s.avgDesviacionPct) < 15 ? "#d97706" : "#dc2626" }}>
+                      {s.avgDesviacionPct > 0 ? "+" : ""}{s.avgDesviacionPct.toFixed(1)}%
+                    </td>
+                    <td style={{ ...td, textAlign: "right" }}>
+                      {s.totalExtraLt > 0 ? "+" : ""}{s.totalExtraLt.toLocaleString("es-CL", { maximumFractionDigits: 0 })} Lt
+                    </td>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 700,
+                      color: s.impactoEconomico > 0 ? "#dc2626" : s.impactoEconomico < 0 ? "#15803d" : "#9ca3af" }}>
+                      {s.impactoEconomico !== 0
+                        ? `${s.impactoEconomico > 0 ? "+" : ""}$${Math.abs(s.impactoEconomico).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+                {operadorStats.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
+                      No hay OTs finalizadas con datos de mojamiento para {desAnio}.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* ── Detalle por OT ─────────────────────────────── */}
+          {desOts.length > 0 && (
+            <>
+              <h3 style={{ fontSize: "13px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>Detalle por OT</h3>
+              <div style={{ overflowX: "auto" }}>
+                <table style={table}>
+                  <thead>
+                    <tr>
+                      {["OT", "Fecha", "Responsable", "Ha", "Moj. plan. (lt/ha)", "Moj. real (lt/ha)", "Desvíación", "Vol. extra/menos", "Impacto $"].map(h => (
+                        <th key={h} style={th}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {desOts.sort((a, b) => (b.fecha_aplicacion ?? "").localeCompare(a.fecha_aplicacion ?? "")).map(ot => {
+                      const totalHa = ot.ot_cuarteles.reduce((s, c) => s + Number(c.superficie_ha), 0);
+                      const mojPlan = Number(ot.mojamiento_solicitado_ltha);
+                      const mojReal = Number(ot.mojamiento_real_ltha);
+                      const desvPct = mojPlan > 0 ? (mojReal - mojPlan) / mojPlan * 100 : 0;
+                      const extraLt = (mojReal - mojPlan) * totalHa;
+                      let impacto = 0;
+                      for (const p of ot.ot_productos) {
+                        const u = p.dosis_unidad.toLowerCase().replace(/\s+/g, "");
+                        if (u.includes("/100lt") || u.includes("/100l")) {
+                          impacto += Number(p.dosis_real) * Math.abs(extraLt) / 100 / 1000 * (costosMap.get(p.producto_id) ?? 0) * (extraLt < 0 ? -1 : 1);
+                        }
+                      }
+                      return (
+                        <tr key={ot.id}>
+                          <td style={td}>
+                            <Link href={`/ordenes/${ot.id}`} style={{ color: "#1a4731", fontWeight: 700, textDecoration: "none" }}>OT #{ot.numero}</Link>
+                          </td>
+                          <td style={{ ...td, whiteSpace: "nowrap" }}>{ot.fecha_aplicacion || "—"}</td>
+                          <td style={td}>{ot.responsable?.nombre || "—"}</td>
+                          <td style={{ ...td, textAlign: "right" }}>{totalHa.toLocaleString("es-CL", { maximumFractionDigits: 1 })}</td>
+                          <td style={{ ...td, textAlign: "right" }}>{mojPlan.toLocaleString("es-CL", { maximumFractionDigits: 0 })}</td>
+                          <td style={{ ...td, textAlign: "right" }}>{mojReal.toLocaleString("es-CL", { maximumFractionDigits: 0 })}</td>
+                          <td style={{ ...td, textAlign: "right", fontWeight: 700,
+                            color: Math.abs(desvPct) < 5 ? "#15803d" : Math.abs(desvPct) < 15 ? "#d97706" : "#dc2626" }}>
+                            {desvPct > 0 ? "+" : ""}{desvPct.toFixed(1)}%
+                          </td>
+                          <td style={{ ...td, textAlign: "right" }}>
+                            {extraLt > 0 ? "+" : ""}{extraLt.toLocaleString("es-CL", { maximumFractionDigits: 0 })} Lt
+                          </td>
+                          <td style={{ ...td, textAlign: "right", fontWeight: 600,
+                            color: impacto > 0 ? "#dc2626" : impacto < 0 ? "#15803d" : "#9ca3af" }}>
+                            {impacto !== 0
+                              ? `${impacto > 0 ? "+" : ""}$${Math.abs(impacto).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
+                              : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: "8px", padding: "0 4px" }}>
+                * Impacto económico estimado solo para productos dosificados en cc/g por 100 lt de agua. Precio basado en costo promedio ponderado de entradas a bodega.
+              </p>
+            </>
+          )}
+          </>
         )}
       </main>
     </>
@@ -887,4 +1177,5 @@ const lbl: React.CSSProperties          = { display: "block", fontSize: "11px", 
 const minp: React.CSSProperties         = { padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "14px", background: "#fff", color: "#111", width: "100%", boxSizing: "border-box" };
 const mSaveBtn: React.CSSProperties     = { padding: "9px 22px", background: "#1a4731", color: "#fff", border: "none", borderRadius: "9px", fontWeight: 700, fontSize: "14px", cursor: "pointer" };
 const mCancelBtn: React.CSSProperties   = { padding: "9px 18px", background: "#fff", border: "1.5px solid #d1d5db", borderRadius: "9px", fontWeight: 600, fontSize: "14px", cursor: "pointer", color: "#374151" };
+const summaryChip: React.CSSProperties  = { display: "flex", flexDirection: "column", gap: "4px", background: "#f0f4f2", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "12px 20px", minWidth: "160px" };
 import { Suspense } from "react"; export default function BodegaPage() { return <Suspense><BodegaContent /></Suspense>; }
