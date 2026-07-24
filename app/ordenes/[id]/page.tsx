@@ -261,11 +261,34 @@ function OTDetalleContent() {
     // (así si salida_barbecho falla por constraint, los movimientos campo igual quedan registrados)
     const fecha = ot.fecha_aplicacion || new Date().toISOString().slice(0, 10);
 
+    // Calcular costo promedio ponderado por producto (suma(cantidad*precio) / suma(cantidad) de todas las entradas con precio)
+    const productoIds = [...new Set(consumos.map(c => c.p.producto_id))];
+    const costoPromedio: Record<string, number> = {};
+    if (productoIds.length > 0) {
+      const { data: entradas } = await supabase
+        .from("stock_movimientos")
+        .select("producto_id, cantidad, precio_unitario")
+        .eq("empresa_id", ot.empresa_id)
+        .eq("tipo", "entrada")
+        .in("producto_id", productoIds)
+        .not("precio_unitario", "is", null);
+      if (entradas) {
+        for (const pid of productoIds) {
+          const movs = entradas.filter((m: { producto_id: string; cantidad: number; precio_unitario: number }) => m.producto_id === pid);
+          if (movs.length === 0) continue;
+          const totalValor = movs.reduce((acc: number, m: { cantidad: number; precio_unitario: number }) => acc + m.cantidad * m.precio_unitario, 0);
+          const totalCantidad = movs.reduce((acc: number, m: { cantidad: number }) => acc + m.cantidad, 0);
+          if (totalCantidad > 0) costoPromedio[pid] = totalValor / totalCantidad;
+        }
+      }
+    }
+
     const salidaCampo = consumos
       .filter(({ consumoCampo }) => consumoCampo > 0)
       .map(({ p, consumoCampo, unidadStock }) => ({
         empresa_id: ot.empresa_id, producto_id: p.producto_id,
         tipo: "salida" as const, cantidad: consumoCampo, unidad: unidadStock, fecha, ot_id: ot.id,
+        precio_unitario: costoPromedio[p.producto_id] ?? null,
       }));
 
     const salidaBarbecho = consumos
@@ -274,6 +297,7 @@ function OTDetalleContent() {
         empresa_id: ot.empresa_id, producto_id: p.producto_id,
         tipo: "salida_barbecho" as const, cantidad: consumoBarbecho, unidad: unidadStock, fecha, ot_id: ot.id,
         notas: `Remanente barbecho (${remanenteLt} lt agua)`,
+        precio_unitario: costoPromedio[p.producto_id] ?? null,
       }));
 
     if (salidaCampo.length === 0 && salidaBarbecho.length === 0) {
