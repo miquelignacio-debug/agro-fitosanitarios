@@ -70,7 +70,37 @@ BEGIN
   RAISE NOTICE 'Registros existentes asignados al campo Santa Camila.';
 END $$;
 
--- ── 5. Eliminar empresa Agrícola Quillaico (no tiene usuarios ni datos) ───────
+-- ── 5. Reasignar registros de Agrícola Quillaico → Agrícola Santa Camila ─────
+-- Mueve cuarteles, órdenes, bodega, personal, maquinaria al campo Quillaico
+-- de la empresa Santa Camila antes de eliminar la empresa Quillaico.
+DO $$
+DECLARE
+  v_empresa_sc uuid;
+  v_empresa_q  uuid;
+  v_campo_q    uuid;
+BEGIN
+  SELECT id INTO v_empresa_sc FROM empresas WHERE nombre = 'Agrícola Santa Camila' LIMIT 1;
+  SELECT id INTO v_empresa_q  FROM empresas WHERE nombre = 'Agrícola Quillaico'    LIMIT 1;
+
+  IF v_empresa_q IS NULL THEN
+    RAISE NOTICE 'Empresa "Agrícola Quillaico" no encontrada (ya fue eliminada). OK.';
+    RETURN;
+  END IF;
+
+  SELECT id INTO v_campo_q FROM campos WHERE nombre = 'Quillaico' AND empresa_id = v_empresa_sc LIMIT 1;
+
+  UPDATE cuarteles         SET empresa_id = v_empresa_sc, campo_id = v_campo_q WHERE empresa_id = v_empresa_q;
+  UPDATE ordenes_trabajo   SET empresa_id = v_empresa_sc, campo_id = v_campo_q WHERE empresa_id = v_empresa_q;
+  UPDATE stock_movimientos SET empresa_id = v_empresa_sc, campo_id = v_campo_q WHERE empresa_id = v_empresa_q;
+  UPDATE personal          SET empresa_id = v_empresa_sc WHERE empresa_id = v_empresa_q;
+  UPDATE operadores        SET empresa_id = v_empresa_sc WHERE empresa_id = v_empresa_q;
+  UPDATE maquinaria        SET empresa_id = v_empresa_sc WHERE empresa_id = v_empresa_q;
+  UPDATE usuarios          SET empresa_id = v_empresa_sc WHERE empresa_id = v_empresa_q AND rol != 'superadmin';
+
+  RAISE NOTICE 'Registros de Agrícola Quillaico reasignados a Agrícola Santa Camila / campo Quillaico.';
+END $$;
+
+-- ── 6. Eliminar empresa Agrícola Quillaico (ahora sin registros dependientes) ─
 DELETE FROM empresas WHERE nombre = 'Agrícola Quillaico';
 
 -- ── 6. RLS para campos ────────────────────────────────────────────────────────

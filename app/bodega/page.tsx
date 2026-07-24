@@ -44,7 +44,7 @@ type SalidaVentaForm = {
 function BodegaContent() {
   const router = useRouter();
   const { empresaId, empresaNombre } = useEmpresa();
-  const { campoId } = useCampo();
+  const { campoId, campoNombre } = useCampo();
   const { isAdmin, isEncargado } = useRol();
   const showPrecios = isAdmin;
 
@@ -315,7 +315,7 @@ function BodegaContent() {
       <main style={container}>
         <div style={pageHeader}>
           <div>
-            <h1 style={pageTitle}>Bodega — {empresaNombre}</h1>
+            <h1 style={pageTitle}>Bodega — {campoNombre || empresaNombre}</h1>
             <p style={pageSubtitle}>Stock de productos fitosanitarios</p>
           </div>
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
