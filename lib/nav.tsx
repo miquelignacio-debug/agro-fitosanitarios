@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { href: "/ordenes",     label: "Órdenes" },
   { href: "/cuaderno",    label: "Cuaderno" },
   { href: "/bodega",      label: "Bodega" },
+  { href: "/costos",      label: "Costos" },
   { href: "/calculadora", label: "Calcular" },
   { href: "/cuarteles",   label: "Cuarteles" },
   { href: "/productos",   label: "Productos" },
