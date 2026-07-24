@@ -176,44 +176,49 @@ function DashboardContent() {
     const anoActual = new Date().getFullYear();
     const desde = `${anoActual}-01-01`;
 
-    const baseCo = supabase.from("ordenes_trabajo").select(`ot_cuarteles(superficie_ha), ot_productos(consumo_total, dosis_unidad, producto:productos(nombre_comercial, precio_costo))`).eq("empresa_id", eid).eq("estado", "finalizada").gte("fecha_aplicacion", desde);
-    const { data } = await (campoId ? baseCo.eq("campo_id", campoId) : baseCo);
+    // Costos desde salidas de OT que tienen precio_unitario (costo promedio ponderado al momento de la salida)
+    const baseMovs = supabase
+      .from("stock_movimientos")
+      .select("producto_id, cantidad, precio_unitario, unidad, producto:productos(nombre_comercial)")
+      .eq("empresa_id", eid)
+      .in("tipo", ["salida", "salida_barbecho"])
+      .not("ot_id", "is", null)
+      .not("precio_unitario", "is", null)
+      .gte("fecha", desde);
+    const { data: movs } = await (campoId ? baseMovs.eq("campo_id", campoId) : baseMovs);
 
-    if (!data) return;
+    // Hectáreas de OTs finalizadas en el año (para costo/ha)
+    const baseHa = supabase
+      .from("ordenes_trabajo")
+      .select("ot_cuarteles(superficie_ha)")
+      .eq("empresa_id", eid)
+      .eq("estado", "finalizada")
+      .gte("fecha_aplicacion", desde);
+    const { data: otsHa } = await (campoId ? baseHa.eq("campo_id", campoId) : baseHa);
+
+    if (!movs) return;
 
     const costoMap = new Map<string, Costo>();
-    let totalHa = 0;
-
-    for (const ot of data as unknown as {
-      ot_cuarteles: { superficie_ha: number }[];
-      ot_productos: { consumo_total: number | null; dosis_unidad: string; producto: { nombre_comercial: string; precio_costo: number | null } }[];
-    }[]) {
-      const supTotal = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
-      totalHa += supTotal;
-
-      for (const op of ot.ot_productos) {
-        if (op.consumo_total == null) continue;
-        const nombre = op.producto.nombre_comercial;
-        const precio = op.producto.precio_costo;
-        const costo = precio != null ? op.consumo_total * precio : null;
-        const unidad = op.dosis_unidad.split("/")[0];
-
-        const prev = costoMap.get(nombre);
-        if (prev) {
-          prev.consumo += op.consumo_total;
-          prev.costo = (prev.costo ?? 0) + (costo ?? 0);
-        } else {
-          costoMap.set(nombre, { producto: nombre, consumo: op.consumo_total, unidad, precio, costo });
-        }
+    for (const m of movs as unknown as { producto_id: string; cantidad: number; precio_unitario: number; unidad: string; producto: { nombre_comercial: string } }[]) {
+      const nombre = m.producto?.nombre_comercial ?? m.producto_id;
+      const costo = m.cantidad * m.precio_unitario;
+      const prev = costoMap.get(nombre);
+      if (prev) {
+        prev.consumo += m.cantidad;
+        prev.costo = (prev.costo ?? 0) + costo;
+      } else {
+        costoMap.set(nombre, { producto: nombre, consumo: m.cantidad, unidad: m.unidad, precio: m.precio_unitario, costo });
       }
     }
 
-    const top = Array.from(costoMap.values())
-      .filter(c => c.costo != null && c.costo > 0)
-      .sort((a, b) => (b.costo ?? 0) - (a.costo ?? 0))
-      .slice(0, 5);
+    const totalHa = (otsHa ?? []).reduce((s: number, ot: unknown) => {
+      const o = ot as { ot_cuarteles: { superficie_ha: number }[] };
+      return s + o.ot_cuarteles.reduce((ss, c) => ss + c.superficie_ha, 0);
+    }, 0);
 
-    const total = top.reduce((s, c) => s + (c.costo ?? 0), 0);
+    const all = Array.from(costoMap.values()).filter(c => (c.costo ?? 0) > 0);
+    const total = all.reduce((s, c) => s + (c.costo ?? 0), 0);
+    const top = [...all].sort((a, b) => (b.costo ?? 0) - (a.costo ?? 0)).slice(0, 5);
     const porHa = totalHa > 0 ? total / totalHa : 0;
 
     setCostos({ total, porHa, top });
@@ -538,9 +543,9 @@ function DashboardContent() {
                 </div>
                 {costos.total === 0 && costos.top.length === 0 ? (
                   <div>
-                    <p style={empty}>Sin datos de costo. Configurá el precio de los productos en el catálogo.</p>
-                    <Link href="/productos" style={{ fontSize: "13px", color: "#1a4731", fontWeight: 600 }}>
-                      Ir a Productos →
+                    <p style={empty}>Sin datos de costo. Registrá ingresos de bodega con precio para activar el costeo.</p>
+                    <Link href="/bodega/ingreso" style={{ fontSize: "13px", color: "#1a4731", fontWeight: 600 }}>
+                      Ir a ingreso de bodega →
                     </Link>
                   </div>
                 ) : (
