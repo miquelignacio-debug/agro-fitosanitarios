@@ -72,7 +72,7 @@ function CostosContent() {
       .gte("fecha_aplicacion", desde)
       .lte("fecha_aplicacion", hasta);
     const { data: otData } = await (campoId ? baseOT.eq("campo_id", campoId) : baseOT);
-    const otList = (otData as OTData[]) || [];
+    const otList = ((otData ?? []) as unknown as OTData[]);
     setOts(otList);
 
     if (otList.length === 0) { setMovs([]); setLoading(false); return; }
@@ -85,7 +85,7 @@ function CostosContent() {
       .not("precio_unitario", "is", null)
       .in("ot_id", otList.map(o => o.id));
     const { data: movData } = await (campoId ? baseMovs.eq("campo_id", campoId) : baseMovs);
-    setMovs((movData as MovData[]) || []);
+    setMovs(((movData ?? []) as unknown as MovData[]));
     setLoading(false);
   };
 
