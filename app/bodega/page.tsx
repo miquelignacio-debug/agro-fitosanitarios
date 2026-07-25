@@ -74,7 +74,12 @@ type OperadorStats = {
 function calcConsumoPlaneado(dosis: number, dosisUnidad: string, totalHa: number, mojamientoLtha: number): number {
   const u = dosisUnidad.toLowerCase().replace(/\s+/g, "");
   const volTotal = totalHa * mojamientoLtha;
-  if (u.includes("/100lt") || u.includes("/100l")) return dosis * volTotal / 100 / 1000;
+  if (u.includes("/100lt") || u.includes("/100l")) {
+    // dosis * volTotal / 100 gives result in the same unit as the dosis prefix.
+    // Only divide by 1000 for minor units (cc, ml, g) to convert to lt/kg.
+    const raw = dosis * volTotal / 100;
+    return (u.startsWith("cc") || u.startsWith("ml") || u.startsWith("g")) ? raw / 1000 : raw;
+  }
   if (u.startsWith("lt/ha") || u.startsWith("l/ha")) return dosis * totalHa;
   if (u.startsWith("cc/ha") || u.startsWith("ml/ha")) return dosis * totalHa / 1000;
   if (u.startsWith("kg/ha")) return dosis * totalHa;
@@ -303,7 +308,8 @@ function BodegaContent() {
     for (const p of ot.ot_productos) {
       const u = p.dosis_unidad.toLowerCase().replace(/\s+/g, "");
       if (u.includes("/100lt") || u.includes("/100l")) {
-        const extraProd = Number(p.dosis_real) * Math.abs(extraLt) / 100 / 1000;
+        const raw = Number(p.dosis_real) * Math.abs(extraLt) / 100;
+        const extraProd = (u.startsWith("cc") || u.startsWith("ml") || u.startsWith("g")) ? raw / 1000 : raw;
         const precio = costosMap.get(p.producto_id) ?? 0;
         impacto += extraProd * precio * (extraLt < 0 ? -1 : 1);
       }
@@ -1111,7 +1117,9 @@ function BodegaContent() {
                       for (const p of ot.ot_productos) {
                         const u = p.dosis_unidad.toLowerCase().replace(/\s+/g, "");
                         if (u.includes("/100lt") || u.includes("/100l")) {
-                          impacto += Number(p.dosis_real) * Math.abs(extraLt) / 100 / 1000 * (costosMap.get(p.producto_id) ?? 0) * (extraLt < 0 ? -1 : 1);
+                          const raw = Number(p.dosis_real) * Math.abs(extraLt) / 100;
+                          const extraProd = (u.startsWith("cc") || u.startsWith("ml") || u.startsWith("g")) ? raw / 1000 : raw;
+                          impacto += extraProd * (costosMap.get(p.producto_id) ?? 0) * (extraLt < 0 ? -1 : 1);
                         }
                       }
                       return (
