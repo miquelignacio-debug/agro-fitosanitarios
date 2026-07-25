@@ -56,7 +56,11 @@ type OtDesviacion = {
   mojamiento_solicitado_ltha: number;
   mojamiento_real_ltha: number;
   fecha_aplicacion: string | null;
-  responsable: { id: string; nombre: string } | null;
+  ot_aplicadores: Array<{
+    personal_id?: string | null;
+    personal?: { id: string; nombre: string } | null;
+    operador?: { nombre: string } | null;
+  }>;
   ot_productos: Array<{ producto_id: string; dosis_real: number; dosis_unidad: string; producto: { nombre_comercial: string; unidad_bodega: "lt" | "kg" | null } }>;
   ot_cuarteles: Array<{ superficie_ha: number }>;
 };
@@ -172,15 +176,6 @@ function BodegaContent() {
       .eq("empresa_id", eid)
       .in("estado", ["borrador", "emitida", "en_ejecucion"]);
 
-    const baseOtsDes = supabase
-      .from("ordenes_trabajo")
-      .select("id, numero, mojamiento_solicitado_ltha, mojamiento_real_ltha, fecha_aplicacion, responsable:personal!responsable_id(id, nombre), ot_cuarteles(superficie_ha), ot_productos(producto_id, dosis_real, dosis_unidad, producto:productos(nombre_comercial, unidad_bodega))")
-      .eq("empresa_id", eid)
-      .eq("estado", "finalizada")
-      .not("mojamiento_solicitado_ltha", "is", null)
-      .not("mojamiento_real_ltha", "is", null)
-      .gte("fecha_aplicacion", `${new Date().getFullYear() - 1}-01-01`);
-
     const baseCostos = supabase
       .from("stock_movimientos")
       .select("producto_id, cantidad, precio_unitario")
@@ -188,16 +183,36 @@ function BodegaContent() {
       .eq("tipo", "entrada")
       .not("precio_unitario", "is", null);
 
-    const [{ data: aggData }, { data: mv }, { data: otsPend }, { data: otsDes }, { data: costosData }] = await Promise.all([
+    const [{ data: aggData }, { data: mv }, { data: otsPend }, { data: costosData }] = await Promise.all([
       (campoId ? baseAgg.eq("campo_id", campoId) : baseAgg),
       (campoId ? baseMv.eq("campo_id", campoId) : baseMv)
         .order("fecha", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(500),
       (campoId ? baseOtsPend.eq("campo_id", campoId) : baseOtsPend),
-      (campoId ? baseOtsDes.eq("campo_id", campoId) : baseOtsDes),
       baseCostos,
     ]);
+
+    // Fetch desviación OTs — try v10 schema (personal_id on ot_aplicadores), fall back to operadores join
+    let desQ = supabase.from("ordenes_trabajo")
+      .select("id, numero, mojamiento_solicitado_ltha, mojamiento_real_ltha, fecha_aplicacion, ot_aplicadores(personal_id, personal:personal!personal_id(id, nombre)), ot_cuarteles(superficie_ha), ot_productos(producto_id, dosis_real, dosis_unidad, producto:productos(nombre_comercial, unidad_bodega))")
+      .eq("empresa_id", eid).eq("estado", "finalizada")
+      .not("mojamiento_solicitado_ltha", "is", null)
+      .not("mojamiento_real_ltha", "is", null)
+      .gte("fecha_aplicacion", `${new Date().getFullYear() - 1}-01-01`);
+    if (campoId) desQ = desQ.eq("campo_id", campoId);
+    let { data: otsDes, error: desErr } = await desQ;
+    if (desErr) {
+      let desQFb = supabase.from("ordenes_trabajo")
+        .select("id, numero, mojamiento_solicitado_ltha, mojamiento_real_ltha, fecha_aplicacion, ot_aplicadores(operador:operadores(nombre)), ot_cuarteles(superficie_ha), ot_productos(producto_id, dosis_real, dosis_unidad, producto:productos(nombre_comercial, unidad_bodega))")
+        .eq("empresa_id", eid).eq("estado", "finalizada")
+        .not("mojamiento_solicitado_ltha", "is", null)
+        .not("mojamiento_real_ltha", "is", null)
+        .gte("fecha_aplicacion", `${new Date().getFullYear() - 1}-01-01`);
+      if (campoId) desQFb = desQFb.eq("campo_id", campoId);
+      const { data: d2 } = await desQFb;
+      otsDes = d2 as unknown as typeof otsDes;
+    }
 
     // Build campo-specific stock from aggregated movements
     const stockMap = new Map<string, StockRow>();
@@ -293,35 +308,41 @@ function BodegaContent() {
     }
   }
 
-  // Desviación: filter by selected year and group by responsable
+  // Desviación: filter by selected year and group by aplicador
   const desOts = otsDesviacion.filter(ot => ot.fecha_aplicacion?.slice(0, 4) === String(desAnio));
   const operadorMap = new Map<string, OperadorStats>();
   for (const ot of desOts) {
-    const rid = ot.responsable?.id ?? "__none__";
-    const nombre = ot.responsable?.nombre ?? "Sin responsable";
     const totalHa = ot.ot_cuarteles.reduce((s, c) => s + Number(c.superficie_ha), 0);
     const mojPlan = Number(ot.mojamiento_solicitado_ltha);
     const mojReal = Number(ot.mojamiento_real_ltha);
     const desviacionPct = mojPlan > 0 ? (mojReal - mojPlan) / mojPlan * 100 : 0;
     const extraLt = (mojReal - mojPlan) * totalHa;
+    // Impact for ALL products: if mojamiento changed, the tank mix concentration is maintained
+    // so all products scale proportionally: extra = consumo_plan × Δmojamiento / mojPlan
     let impacto = 0;
-    for (const p of ot.ot_productos) {
-      const u = p.dosis_unidad.toLowerCase().replace(/\s+/g, "");
-      if (u.includes("/100lt") || u.includes("/100l")) {
-        const raw = Number(p.dosis_real) * Math.abs(extraLt) / 100;
-        const extraProd = (u.startsWith("cc") || u.startsWith("ml") || u.startsWith("g")) ? raw / 1000 : raw;
-        const precio = costosMap.get(p.producto_id) ?? 0;
-        impacto += extraProd * precio * (extraLt < 0 ? -1 : 1);
+    if (mojPlan > 0) {
+      for (const p of ot.ot_productos) {
+        const consumoPlan = calcConsumoPlaneado(Number(p.dosis_real), p.dosis_unidad, totalHa, mojPlan);
+        const extraProd = consumoPlan * (mojReal - mojPlan) / mojPlan;
+        impacto += extraProd * (costosMap.get(p.producto_id) ?? 0);
       }
     }
-    if (!operadorMap.has(rid)) {
-      operadorMap.set(rid, { id: rid, nombre, nOts: 0, avgDesviacionPct: 0, totalExtraLt: 0, impactoEconomico: 0, ots: [] });
+    const aplicadores = (ot.ot_aplicadores?.length ?? 0) > 0
+      ? ot.ot_aplicadores.map(a => ({
+          id: a.personal?.id ?? a.operador?.nombre ?? "__none__",
+          nombre: a.personal?.nombre ?? a.operador?.nombre ?? "Sin aplicador",
+        }))
+      : [{ id: "__none__", nombre: "Sin aplicador" }];
+    for (const ap of aplicadores) {
+      if (!operadorMap.has(ap.id)) {
+        operadorMap.set(ap.id, { id: ap.id, nombre: ap.nombre, nOts: 0, avgDesviacionPct: 0, totalExtraLt: 0, impactoEconomico: 0, ots: [] });
+      }
+      const stats = operadorMap.get(ap.id)!;
+      stats.nOts += 1;
+      stats.totalExtraLt += extraLt;
+      stats.impactoEconomico += impacto;
+      stats.ots.push({ id: ot.id, numero: ot.numero, fecha: ot.fecha_aplicacion, desviacionPct, extraLt, impacto });
     }
-    const stats = operadorMap.get(rid)!;
-    stats.nOts += 1;
-    stats.totalExtraLt += extraLt;
-    stats.impactoEconomico += impacto;
-    stats.ots.push({ id: ot.id, numero: ot.numero, fecha: ot.fecha_aplicacion, desviacionPct, extraLt, impacto });
   }
   for (const [, s] of operadorMap) {
     s.avgDesviacionPct = s.ots.reduce((sum, o) => sum + o.desviacionPct, 0) / s.ots.length;
@@ -1051,13 +1072,13 @@ function BodegaContent() {
             )}
           </div>
 
-          {/* ── Tabla por responsable ───────────────────────── */}
-          <h3 style={{ fontSize: "13px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>Por responsable</h3>
+          {/* ── Tabla por aplicador ─────────────────────────── */}
+          <h3 style={{ fontSize: "13px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "10px" }}>Por aplicador</h3>
           <div style={{ overflowX: "auto", marginBottom: "28px" }}>
             <table style={table}>
               <thead>
                 <tr>
-                  {["Responsable", "OTs", "Desvíación mojamiento (prom.)", "Vol. extra / menos", "Impacto económico"].map(h => (
+                  {["Aplicador", "OTs", "Desviación mojamiento (prom.)", "Vol. extra / menos", "Impacto económico"].map(h => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -1101,7 +1122,7 @@ function BodegaContent() {
                 <table style={table}>
                   <thead>
                     <tr>
-                      {["OT", "Fecha", "Responsable", "Ha", "Moj. plan. (lt/ha)", "Moj. real (lt/ha)", "Desvíación", "Vol. extra/menos", "Impacto $"].map(h => (
+                      {["OT", "Fecha", "Aplicador/es", "Ha", "Moj. plan. (lt/ha)", "Moj. real (lt/ha)", "Desviación", "Vol. extra/menos", "Impacto $"].map(h => (
                         <th key={h} style={th}>{h}</th>
                       ))}
                     </tr>
@@ -1114,12 +1135,10 @@ function BodegaContent() {
                       const desvPct = mojPlan > 0 ? (mojReal - mojPlan) / mojPlan * 100 : 0;
                       const extraLt = (mojReal - mojPlan) * totalHa;
                       let impacto = 0;
-                      for (const p of ot.ot_productos) {
-                        const u = p.dosis_unidad.toLowerCase().replace(/\s+/g, "");
-                        if (u.includes("/100lt") || u.includes("/100l")) {
-                          const raw = Number(p.dosis_real) * Math.abs(extraLt) / 100;
-                          const extraProd = (u.startsWith("cc") || u.startsWith("ml") || u.startsWith("g")) ? raw / 1000 : raw;
-                          impacto += extraProd * (costosMap.get(p.producto_id) ?? 0) * (extraLt < 0 ? -1 : 1);
+                      if (mojPlan > 0) {
+                        for (const p of ot.ot_productos) {
+                          const consumoPlan = calcConsumoPlaneado(Number(p.dosis_real), p.dosis_unidad, totalHa, mojPlan);
+                          impacto += consumoPlan * (mojReal - mojPlan) / mojPlan * (costosMap.get(p.producto_id) ?? 0);
                         }
                       }
                       return (
@@ -1128,7 +1147,7 @@ function BodegaContent() {
                             <Link href={`/ordenes/${ot.id}`} style={{ color: "#1a4731", fontWeight: 700, textDecoration: "none" }}>OT #{ot.numero}</Link>
                           </td>
                           <td style={{ ...td, whiteSpace: "nowrap" }}>{ot.fecha_aplicacion || "—"}</td>
-                          <td style={td}>{ot.responsable?.nombre || "—"}</td>
+                          <td style={td}>{ot.ot_aplicadores?.map(a => a.personal?.nombre ?? a.operador?.nombre).filter(Boolean).join(", ") || "—"}</td>
                           <td style={{ ...td, textAlign: "right" }}>{totalHa.toLocaleString("es-CL", { maximumFractionDigits: 1 })}</td>
                           <td style={{ ...td, textAlign: "right" }}>{mojPlan.toLocaleString("es-CL", { maximumFractionDigits: 0 })}</td>
                           <td style={{ ...td, textAlign: "right" }}>{mojReal.toLocaleString("es-CL", { maximumFractionDigits: 0 })}</td>
@@ -1152,7 +1171,7 @@ function BodegaContent() {
                 </table>
               </div>
               <p style={{ fontSize: "11px", color: "#9ca3af", marginTop: "8px", padding: "0 4px" }}>
-                * Impacto económico estimado solo para productos dosificados en cc/g por 100 lt de agua. Precio basado en costo promedio ponderado de entradas a bodega.
+                * Impacto económico estimado para todos los productos, asumiendo que la concentración de mezcla se mantiene constante entre aplicaciones (mayor mojamiento = mayor consumo proporcional de todos los productos). Precio basado en costo promedio ponderado de entradas a bodega.
               </p>
             </>
           )}
