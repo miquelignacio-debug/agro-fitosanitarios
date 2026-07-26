@@ -337,7 +337,7 @@ function EditarOTContent() {
       cantidad_maquinadas: aplicadorOT.cantidad_maquinadas ? parseFloat(aplicadorOT.cantidad_maquinadas) : null,
     } : null;
 
-    await Promise.all([
+    const subResults = await Promise.all([
       supabase.from("ot_cuarteles").insert(
         cuartelesOT.filter(c => c.cuartel_id).map(c => ({
           ot_id: params.id, cuartel_id: c.cuartel_id, superficie_ha: parseFloat(c.superficie_ha) || 0,
@@ -346,6 +346,13 @@ function EditarOTContent() {
       supabase.from("ot_productos").insert(productosRows),
       ...(aplicadorRow ? [supabase.from("ot_aplicadores").insert(aplicadorRow)] : []),
     ]);
+
+    const subError = subResults.find(r => r.error);
+    if (subError) {
+      setError("Error guardando detalles de la OT: " + subError.error!.message);
+      setSaving(false);
+      return;
+    }
 
     setSaving(false);
     router.push(`/ordenes/${params.id}`);
@@ -544,7 +551,7 @@ function EditarOTContent() {
                   <div style={{ flex: "1 1 110px" }}>
                     <Field label={i === 0 ? "Unidad" : ""}>
                       <select value={row.dosis_unidad} onChange={e => setProductoRow(i, "dosis_unidad", e.target.value)} style={inputStyle}>
-                        {["lt/ha", "kg/ha", "cc/ha", "g/ha", "g/100lt", "cc/100lt"].map(u => (
+                        {["lt/ha", "kg/ha", "cc/ha", "g/ha", "lt/100lt", "kg/100lt", "cc/100lt", "g/100lt"].map(u => (
                           <option key={u} value={u}>{u}</option>
                         ))}
                       </select>
