@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useEmpresa } from "@/lib/useEmpresa";
+import { useCampo } from "@/lib/useCampo";
 import type { Cuartel, Maquinaria, Producto, Personal } from "@/lib/types";
 import { FUNCIONES_FITOSANITARIAS } from "@/lib/types";
 
@@ -30,6 +31,8 @@ function EditarOTContent() {
   const [personal,      setPersonal]      = useState<Personal[]>([]);
   const [catalogPlagas, setCatalogPlagas] = useState<CatalogPlaga[]>([]);
   const { empresaId: empresa } = useEmpresa();
+  const { campoId } = useCampo();
+  const [especieFilter, setEspecieFilter] = useState("");
   const [stockProductoIds, setStockProductoIds] = useState<Set<string>>(new Set());
 
   // Campos de cabecera
@@ -160,7 +163,9 @@ function EditarOTContent() {
   }, [empresa]);
 
   // ── Computed ──────────────────────────────────────────────────────────────
-  const cuartelesPorEmpresa = cuarteles.filter(c => c.empresa_id === empresa);
+  const cuartelesPorEmpresa  = cuarteles.filter(c => c.empresa_id === empresa && (!campoId || c.campo_id === campoId));
+  const especiesDisponibles  = Array.from(new Set(cuartelesPorEmpresa.map(c => c.especie))).sort();
+  const cuartelesFiltrados   = especieFilter ? cuartelesPorEmpresa.filter(c => c.especie === especieFilter) : cuartelesPorEmpresa;
   const personalSolicitante = personal.filter(p => p.cargo === "Solicitante");
   const personalResponsable = personal.filter(p => p.cargo === "Responsable técnico");
   const personalDosificador = personal.filter(p => p.cargo === "Dosificador");
@@ -436,13 +441,21 @@ function EditarOTContent() {
               </div>
             </div>
             <div style={grid2}>
-              <Field label="Plagas / objetivo">
-                <input type="text" value={plagasObjetivo.join(", ")}
-                  onChange={e => setPlagasObjetivo(e.target.value.split(",").map(s => s.trim()).filter(Boolean))}
-                  style={inputStyle} placeholder="Ej: Botrytis, Oídio..." />
+              <Field label="Plagas / enfermedades a controlar">
+                <PlagasSelector
+                  catalog={catalogPlagas}
+                  selected={plagasObjetivo}
+                  onChange={setPlagasObjetivo}
+                  tipos={["plaga", "enfermedad"]}
+                />
               </Field>
               <Field label="Objetivo principal">
-                <input type="text" value={objetivoPrincipal} onChange={e => setObjetivoPrincipal(e.target.value)} style={inputStyle} placeholder="Ej: Control preventivo" />
+                <SingleSelector
+                  catalog={catalogPlagas}
+                  value={objetivoPrincipal}
+                  onChange={setObjetivoPrincipal}
+                  tipos={["manejo", "nutritivo"]}
+                />
               </Field>
               <Field label="Mojamiento solicitado (lt/ha)">
                 <input type="number" min="0" value={mojamientoSol} onChange={e => handleMojamiento(e.target.value)} style={inputStyle} placeholder="Ej. 500" />
@@ -453,13 +466,27 @@ function EditarOTContent() {
           {/* ── Cuarteles ── */}
           <section style={section}>
             <h2 style={sectionTitle}>Cuarteles a tratar</h2>
+            {especiesDisponibles.length > 1 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
+                {especiesDisponibles.map(e => (
+                  <button key={e} type="button"
+                    onClick={() => setEspecieFilter(prev => prev === e ? "" : e)}
+                    style={{ padding: "5px 12px", borderRadius: "999px", border: "1.5px solid", fontSize: "12px", fontWeight: 600, cursor: "pointer",
+                      background: especieFilter === e ? "#1a4731" : "#fff",
+                      color: especieFilter === e ? "#fff" : "#374151",
+                      borderColor: especieFilter === e ? "#1a4731" : "#d1d5db" }}>
+                    {e}
+                  </button>
+                ))}
+              </div>
+            )}
             {cuartelesOT.map((row, i) => (
               <div key={i} style={rowWrap}>
                 <div style={{ flex: 2 }}>
                   <Field label={i === 0 ? "Cuartel" : ""}>
                     <select value={row.cuartel_id} onChange={e => setCuartelRow(i, "cuartel_id", e.target.value)} style={inputStyle}>
                       <option value="">— Seleccionar —</option>
-                      {cuartelesPorEmpresa.map(c => (
+                      {cuartelesFiltrados.map(c => (
                         <option key={c.id} value={c.id}>{c.codigo} — {c.especie} {c.variedad} ({c.superficie_real ?? "?"}ha)</option>
                       ))}
                     </select>
@@ -644,5 +671,128 @@ const ppeLabel: React.CSSProperties   = { display: "flex", alignItems: "center",
 const footerRow: React.CSSProperties  = { display: "flex", justifyContent: "flex-end", gap: "10px", padding: "20px 24px", borderTop: "1px solid #e5e7eb" };
 const cancelBtn: React.CSSProperties  = { padding: "10px 20px", borderRadius: "9px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "14px", cursor: "pointer" };
 const saveBtn: React.CSSProperties    = { padding: "10px 24px", borderRadius: "9px", background: "#1a4731", color: "#fff", fontWeight: 700, fontSize: "14px", border: "none", cursor: "pointer" };
+
+const TIPO_COLORS_OT: Record<string, string> = {
+  plaga: "#dc2626", enfermedad: "#ea580c", nutritivo: "#15803d", manejo: "#1d4ed8",
+};
+
+function PlagasSelector({ catalog, selected, onChange, tipos, placeholder: ph }: {
+  catalog: CatalogPlaga[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+  tipos?: string[];
+  placeholder?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const base = tipos ? catalog.filter(c => tipos.includes(c.tipo)) : catalog;
+  const filtered = base.filter(c =>
+    c.nombre.toLowerCase().includes(search.toLowerCase()) &&
+    !selected.includes(c.nombre)
+  );
+
+  const add = (nombre: string) => {
+    onChange([...selected, nombre]);
+    setSearch("");
+    setOpen(false);
+  };
+  const remove = (nombre: string) => onChange(selected.filter(s => s !== nombre));
+
+  return (
+    <div style={{ position: "relative" }}>
+      {selected.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
+          {selected.map(s => (
+            <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "999px", background: "#f0fdf4", border: "1px solid #86efac", fontSize: "12px", fontWeight: 600, color: "#15803d" }}>
+              {s}
+              <button onClick={() => remove(s)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1, color: "#6b7280", fontSize: "14px" }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input
+        value={search}
+        onChange={e => { setSearch(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        style={inputStyle}
+        placeholder={selected.length ? "Agregar más..." : (ph || "Buscar plaga o enfermedad...")}
+      />
+      {open && (search.length > 0 || filtered.length > 0) && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "#fff", border: "1.5px solid #d1d5db", borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", maxHeight: "220px", overflowY: "auto", marginTop: "2px" }}>
+          {filtered.slice(0, 10).map(c => (
+            <button
+              key={c.id}
+              onMouseDown={() => add(c.nombre)}
+              style={{ display: "flex", alignItems: "center", gap: "8px", width: "100%", padding: "8px 12px", background: "none", border: "none", borderBottom: "1px solid #f3f4f6", cursor: "pointer", textAlign: "left", fontSize: "13px", color: "#111" }}
+            >
+              <span style={{ fontSize: "10px", fontWeight: 700, padding: "1px 6px", borderRadius: "4px", background: "#f3f4f6", color: TIPO_COLORS_OT[c.tipo] || "#374151", textTransform: "uppercase", flexShrink: 0 }}>
+                {c.tipo}
+              </span>
+              {c.nombre}
+            </button>
+          ))}
+          {search && !base.some(c => c.nombre.toLowerCase() === search.toLowerCase()) && (
+            <button
+              onMouseDown={() => add(search)}
+              style={{ display: "flex", width: "100%", padding: "8px 12px", background: "#fafafa", border: "none", borderTop: "1px solid #e5e7eb", cursor: "pointer", fontSize: "12px", color: "#6b7280", textAlign: "left" }}
+            >
+              + Agregar &ldquo;{search}&rdquo; como nuevo
+            </button>
+          )}
+          {filtered.length === 0 && !search && (
+            <div style={{ padding: "10px 12px", fontSize: "12px", color: "#9ca3af" }}>Todas las opciones ya están seleccionadas</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SingleSelector({ catalog, value, onChange, tipos, placeholder: ph }: {
+  catalog: CatalogPlaga[];
+  value: string;
+  onChange: (v: string) => void;
+  tipos?: string[];
+  placeholder?: string;
+}) {
+  const [search, setSearch] = useState(value);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => { setSearch(value); }, [value]);
+
+  const base = tipos ? catalog.filter(c => tipos.includes(c.tipo)) : catalog;
+  const filtered = base.filter(c => c.nombre.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        value={search}
+        onChange={e => { setSearch(e.target.value); onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        style={inputStyle}
+        placeholder={ph || "Buscar o escribir..."}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 200, background: "#fff", border: "1.5px solid #d1d5db", borderRadius: "8px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", maxHeight: "220px", overflowY: "auto", marginTop: "2px" }}>
+          {filtered.slice(0, 10).map(c => (
+            <button
+              key={c.id}
+              onMouseDown={() => { onChange(c.nombre); setSearch(c.nombre); setOpen(false); }}
+              style={{ display: "flex", alignItems: "center", gap: "8px", width: "100%", padding: "8px 12px", background: "none", border: "none", borderBottom: "1px solid #f3f4f6", cursor: "pointer", textAlign: "left", fontSize: "13px", color: "#111" }}
+            >
+              <span style={{ fontSize: "10px", fontWeight: 700, padding: "1px 6px", borderRadius: "4px", background: "#f3f4f6", color: TIPO_COLORS_OT[c.tipo] || "#374151", textTransform: "uppercase", flexShrink: 0 }}>
+                {c.tipo}
+              </span>
+              {c.nombre}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function EditarOTPage() { return <Suspense><EditarOTContent /></Suspense>; }
