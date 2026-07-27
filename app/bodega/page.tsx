@@ -899,12 +899,10 @@ function BodegaContent() {
                       {(() => {
                         const costo = costosMap.get(s.producto_id);
                         const valor = costo != null ? Number(s.cantidad_disponible) * costo : null;
-                        const fmtV  = (v: number) => v >= 1_000_000
-                          ? `$${(v / 1_000_000).toLocaleString("es-CL", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MM`
-                          : `$${v.toLocaleString("es-CL", { maximumFractionDigits: 0 })}`;
+                        const fmtMM = (v: number) => `$${(v / 1_000_000).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MM`;
                         return (
                           <td style={{ ...td, textAlign: "right", color: valor != null ? "#1a4731" : "#d1d5db", fontWeight: valor != null ? 700 : 400 }}>
-                            {valor != null ? fmtV(valor) : "—"}
+                            {valor != null ? fmtMM(valor) : "—"}
                           </td>
                         );
                       })()}
