@@ -69,21 +69,35 @@ function NuevaOTContent() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
 
+      const fetchAllProductos = async (): Promise<Producto[]> => {
+        const BATCH = 1000;
+        const all: Producto[] = [];
+        let offset = 0;
+        while (true) {
+          const { data } = await supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").range(offset, offset + BATCH - 1);
+          if (!data || data.length === 0) break;
+          all.push(...(data as Producto[]));
+          if (data.length < BATCH) break;
+          offset += BATCH;
+        }
+        return all;
+      };
+
       const [
-        { data: cua }, { data: mac }, { data: prod }, { data: pers }, { data: plagas },
+        { data: cua }, { data: mac }, { data: pers }, { data: plagas }, prod,
       ] = await Promise.all([
         supabase.from("cuarteles").select("*").eq("activo", true).order("codigo"),
         supabase.from("maquinaria").select("*").eq("activo", true).order("codigo"),
-        supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(100000),
         supabase.from("personal").select("*").eq("activo", true).order("nombre"),
         supabase.from("plagas_objetivos").select("*").eq("activo", true).order("tipo").order("nombre"),
+        fetchAllProductos(),
       ]);
 
       setCuarteles((cua as Cuartel[]) || []);
       const maq = (mac as Maquinaria[]) || [];
       setTractores(maq.filter(m => m.tipo === "tractor"));
       setImplementos(maq.filter(m => m.tipo === "implemento"));
-      setProductos((prod as Producto[]) || []);
+      setProductos(prod);
       setPersonal((pers as Personal[]) || []);
       setCatalogPlagas((plagas as CatalogPlaga[]) || []);
       setLoading(false);

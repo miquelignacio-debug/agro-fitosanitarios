@@ -28,11 +28,24 @@ function CalculadoraContent() {
 
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
+    const fetchAllProductos = async (): Promise<Producto[]> => {
+      const BATCH = 1000;
+      const all: Producto[] = [];
+      let offset = 0;
+      while (true) {
+        const { data } = await supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").range(offset, offset + BATCH - 1);
+        if (!data || data.length === 0) break;
+        all.push(...(data as Producto[]));
+        if (data.length < BATCH) break;
+        offset += BATCH;
+      }
+      return all;
+    };
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const { data: prod } = await supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(100000);
-      setProductos((prod as Producto[]) || []);
+      const prod = await fetchAllProductos();
+      setProductos(prod);
       setLoading(false);
     };
     init();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
@@ -32,27 +32,44 @@ function IngresoContent() {
   const [notas, setNotas] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [catalogProv, setCatalogProv] = useState<string[]>([]);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleBusqueda = (val: string) => {
+    setBusqueda(val);
+    setProductoId("");
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (val.length >= 2) {
+      searchTimeout.current = setTimeout(async () => {
+        const { data } = await supabase
+          .from("productos")
+          .select("*")
+          .eq("activo", true)
+          .ilike("nombre_comercial", `%${val}%`)
+          .order("nombre_comercial")
+          .limit(60);
+        setProductos((data as Producto[]) || []);
+      }, 300);
+    } else {
+      setProductos([]);
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
 
-      const [{ data: prod }, { data: usr }, { data: prov }] = await Promise.all([
-        supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(100000),
+      const [{ data: usr }, { data: prov }] = await Promise.all([
         supabase.from("usuarios").select("*").eq("id", user.id).single(),
         supabase.from("proveedores").select("nombre").eq("activo", true).order("nombre"),
       ]);
       setCatalogProv((prov || []).map((r: { nombre: string }) => r.nombre));
-      setProductos((prod as Producto[]) || []);
       setUsuario(usr as Usuario);
     };
     init();
   }, []);
 
-  const productosFiltrados = busqueda
-    ? productos.filter((p) => p.nombre_comercial.toLowerCase().includes(busqueda.toLowerCase()))
-    : productos;
+  const productosFiltrados = productos;
 
   const handleSave = async () => {
     setError("");
@@ -179,9 +196,9 @@ function IngresoContent() {
             <Field label="Buscar producto">
               <input
                 value={busqueda}
-                onChange={(e) => { setBusqueda(e.target.value); setProductoId(""); }}
+                onChange={(e) => handleBusqueda(e.target.value)}
                 style={inputStyle}
-                placeholder="Escribí para filtrar..."
+                placeholder="Escribí al menos 2 letras para buscar..."
               />
             </Field>
             <div style={{ marginTop: "10px", maxHeight: "220px", overflowY: "auto", border: "1.5px solid #d1d5db", borderRadius: "8px" }}>

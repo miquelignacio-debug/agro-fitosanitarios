@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
@@ -10,6 +10,7 @@ import type { Producto } from "@/lib/types";
 import { TOXICIDAD_ABEJAS_LABEL, TOXICIDAD_ABEJAS_COLOR } from "@/lib/types";
 
 type EditPrecios = { id: string; nombre: string; precio: string; minimo: string };
+const PAGE_SIZE = 200;
 
 export default function ProductosPage() {
   const router = useRouter();
@@ -20,30 +21,54 @@ export default function ProductosPage() {
   const [filtroFuente, setFiltroFuente] = useState<"todos" | "sag" | "manual">("todos");
   const [editPrecios, setEditPrecios] = useState<EditPrecios | null>(null);
   const [savingPrecios, setSavingPrecios] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
+
+  const load = useCallback(async (p: number, q: string, fuente: "todos" | "sag" | "manual") => {
+    setLoading(true);
+    const from = (p - 1) * PAGE_SIZE;
+    let query = supabase.from("productos").select("*", { count: "exact" }).order("nombre_comercial");
+    if (q.trim()) {
+      query = query.or(`nombre_comercial.ilike.%${q}%,numero_registro.ilike.%${q}%,ingrediente_activo.ilike.%${q}%`);
+    }
+    if (fuente !== "todos") query = query.eq("fuente", fuente);
+    const { data, count } = await query.range(from, from + PAGE_SIZE - 1);
+    setProductos((data as Producto[]) || []);
+    setTotalCount(count ?? 0);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const { data } = await supabase
-        .from("productos")
-        .select("*")
-        .order("nombre_comercial")
-        .limit(100000);
-      setProductos((data as Producto[]) || []);
-      setLoading(false);
+      load(1, "", "todos");
     };
     init();
-  }, []);
+  }, [load, router]);
 
-  const filtered = productos.filter((p) => {
-    const matchSearch =
-      p.nombre_comercial.toLowerCase().includes(search.toLowerCase()) ||
-      (p.numero_registro || "").toLowerCase().includes(search.toLowerCase()) ||
-      (p.ingrediente_activo || "").toLowerCase().includes(search.toLowerCase());
-    const matchFuente = filtroFuente === "todos" || p.fuente === filtroFuente;
-    return matchSearch && matchFuente;
-  });
+  const handleSearch = (val: string) => {
+    setSearch(val);
+    clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      setPage(1);
+      load(1, val, filtroFuente);
+    }, 400);
+  };
+
+  const handleFuente = (val: "todos" | "sag" | "manual") => {
+    setFiltroFuente(val);
+    setPage(1);
+    load(1, search, val);
+  };
+
+  const handlePage = (p: number) => {
+    setPage(p);
+    load(p, search, filtroFuente);
+  };
+
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
   return (
     <>
@@ -52,7 +77,7 @@ export default function ProductosPage() {
         <div style={pageHeader}>
           <div>
             <h1 style={pageTitle}>Catálogo de productos</h1>
-            <p style={pageSubtitle}>{productos.length} productos registrados</p>
+            <p style={pageSubtitle}>{totalCount} productos registrados</p>
           </div>
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             {isSuperAdmin && (
@@ -72,12 +97,12 @@ export default function ProductosPage() {
           <input
             placeholder="Buscar por nombre, N° registro, ingrediente activo..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearch(e.target.value)}
             style={{ ...searchInput, flex: 1, minWidth: "240px" }}
           />
           <select
             value={filtroFuente}
-            onChange={(e) => setFiltroFuente(e.target.value as typeof filtroFuente)}
+            onChange={(e) => handleFuente(e.target.value as typeof filtroFuente)}
             style={selectStyle}
           >
             <option value="todos">Todos</option>
@@ -90,7 +115,6 @@ export default function ProductosPage() {
           <p style={{ color: "#6b7280", marginTop: "20px" }}>Cargando...</p>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            {/* Modal precio / stock mínimo */}
             {editPrecios && (
               <div style={modalOverlay}>
                 <div style={modalBox}>
@@ -119,8 +143,7 @@ export default function ProductosPage() {
                       }).eq("id", editPrecios.id);
                       setSavingPrecios(false);
                       setEditPrecios(null);
-                      const { data } = await supabase.from("productos").select("*").order("nombre_comercial").limit(100000);
-                      setProductos((data as Producto[]) || []);
+                      load(page, search, filtroFuente);
                     }}>
                       {savingPrecios ? "Guardando..." : "Guardar"}
                     </button>
@@ -139,7 +162,7 @@ export default function ProductosPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p) => (
+                {productos.map((p) => (
                   <tr key={p.id}>
                     <td style={{ ...td, fontWeight: 700 }}>{p.nombre_comercial}</td>
                     <td style={td}>{p.numero_registro || "—"}</td>
@@ -198,10 +221,33 @@ export default function ProductosPage() {
                 ))}
               </tbody>
             </table>
-            {filtered.length === 0 && (
+
+            {productos.length === 0 && (
               <p style={{ textAlign: "center", color: "#9ca3af", padding: "30px", background: "#fff" }}>
                 No se encontraron productos.
               </p>
+            )}
+
+            {totalPages > 1 && (
+              <div style={paginationRow}>
+                <button
+                  disabled={page <= 1}
+                  onClick={() => handlePage(page - 1)}
+                  style={{ ...pageBtn, opacity: page <= 1 ? 0.4 : 1, cursor: page <= 1 ? "default" : "pointer" }}
+                >
+                  ← Anterior
+                </button>
+                <span style={{ fontSize: "13px", color: "#6b7280" }}>
+                  Página {page} de {totalPages} · {totalCount} productos
+                </span>
+                <button
+                  disabled={page >= totalPages}
+                  onClick={() => handlePage(page + 1)}
+                  style={{ ...pageBtn, opacity: page >= totalPages ? 0.4 : 1, cursor: page >= totalPages ? "default" : "pointer" }}
+                >
+                  Siguiente →
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -232,3 +278,5 @@ const lbl: React.CSSProperties = { display: "block", fontSize: "11px", fontWeigh
 const minp: React.CSSProperties = { padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "14px", background: "#fff", color: "#111", width: "100%", boxSizing: "border-box" };
 const mSaveBtn: React.CSSProperties = { padding: "9px 22px", background: "#1a4731", color: "#fff", border: "none", borderRadius: "9px", fontWeight: 700, fontSize: "14px", cursor: "pointer" };
 const mCancelBtn: React.CSSProperties = { padding: "9px 18px", background: "#fff", border: "1.5px solid #d1d5db", borderRadius: "9px", fontWeight: 600, fontSize: "14px", cursor: "pointer", color: "#374151" };
+const paginationRow: React.CSSProperties = { display: "flex", justifyContent: "center", alignItems: "center", gap: "16px", padding: "14px 16px", background: "#fff", borderTop: "1px solid #e5e7eb", borderRadius: "0 0 14px 14px" };
+const pageBtn: React.CSSProperties = { padding: "7px 16px", borderRadius: "8px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px" };
