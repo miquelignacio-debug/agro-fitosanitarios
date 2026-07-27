@@ -274,7 +274,10 @@ function BodegaContent() {
   };
 
   const stockFiltrado = stock.filter(s => {
-    const matchSearch  = !stockSearch  || s.producto.nombre_comercial.toLowerCase().includes(stockSearch.toLowerCase());
+    const q = stockSearch.toLowerCase();
+    const matchSearch  = !stockSearch  ||
+      s.producto.nombre_comercial.toLowerCase().includes(q) ||
+      (s.producto.ingrediente_activo || "").toLowerCase().includes(q);
     const matchFuncion = !stockFuncion || s.producto.tipo_funcion?.includes(stockFuncion);
     const matchBajo    = !stockBajo    || esBajoStock(s);
     return matchSearch && matchFuncion && matchBajo;
@@ -842,7 +845,7 @@ function BodegaContent() {
           <>
             <div style={{ display: "flex", gap: "10px", marginBottom: "14px", flexWrap: "wrap", alignItems: "center" }}>
               <input
-                placeholder="Buscar producto..."
+                placeholder="Buscar producto o ingrediente activo..."
                 value={stockSearch}
                 onChange={e => setStockSearch(e.target.value)}
                 style={filterInput}
@@ -863,8 +866,8 @@ function BodegaContent() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Producto", "N° Registro", "Ingrediente activo", "Función", "Stock disponible", "Stock proyectado", "Alerta"].map((h) => (
-                    <th key={h} style={th}>{h}</th>
+                  {["Producto", "N° Registro", "Ingrediente activo", "Función", "Stock disponible", "Stock proyectado", "Valor en bodega", "Alerta"].map((h) => (
+                    <th key={h} style={{ ...th, textAlign: h === "Valor en bodega" ? "right" : "left" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -893,6 +896,15 @@ function BodegaContent() {
                           </td>
                         );
                       })()}
+                      {(() => {
+                        const costo = costosMap.get(s.producto_id);
+                        const valor = costo != null ? Number(s.cantidad_disponible) * costo : null;
+                        return (
+                          <td style={{ ...td, textAlign: "right", color: valor != null ? "#1a4731" : "#d1d5db", fontWeight: valor != null ? 700 : 400 }}>
+                            {valor != null ? `$${valor.toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
+                          </td>
+                        );
+                      })()}
                       <td style={td}>
                         {bajo && (
                           <span style={alertaBadge}>⚠️ Bajo stock</span>
@@ -903,12 +915,29 @@ function BodegaContent() {
                 })}
                 {stock.length === 0 && (
                   <tr>
-                    <td colSpan={7} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
+                    <td colSpan={8} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
                       Sin movimientos de stock para esta empresa.
                     </td>
                   </tr>
                 )}
               </tbody>
+              {stockFiltrado.length > 0 && (() => {
+                const totalValor = stockFiltrado.reduce((sum, s) => {
+                  const costo = costosMap.get(s.producto_id);
+                  return costo != null ? sum + Number(s.cantidad_disponible) * costo : sum;
+                }, 0);
+                return totalValor > 0 ? (
+                  <tfoot>
+                    <tr style={{ background: "#f0f4f2" }}>
+                      <td colSpan={6} style={{ ...td, fontWeight: 800, color: "#1a4731", textAlign: "right" }}>Total valor en bodega</td>
+                      <td style={{ ...td, textAlign: "right", fontWeight: 800, color: "#1a4731" }}>
+                        ${totalValor.toLocaleString("es-CL", { maximumFractionDigits: 0 })}
+                      </td>
+                      <td style={td} />
+                    </tr>
+                  </tfoot>
+                ) : null;
+              })()}
             </table>
             </div>
           </>

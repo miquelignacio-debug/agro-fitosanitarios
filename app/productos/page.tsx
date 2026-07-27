@@ -13,7 +13,7 @@ type EditPrecios = { id: string; nombre: string; precio: string; minimo: string 
 
 export default function ProductosPage() {
   const router = useRouter();
-  const { isAdmin, isSuperAdmin, isEncargado } = useRol();
+  const { isAdmin, isSuperAdmin, isEncargado, isVisualizador } = useRol();
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -179,18 +179,18 @@ export default function ProductosPage() {
                       </span>
                     </td>
                     <td style={td}>
-                      {isAdmin && (
+                      {!isVisualizador && (
                       <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                        {isSuperAdmin && (
-                          <Link href={`/productos/${p.id}`} style={editLink}>Editar</Link>
+                        <Link href={`/productos/${p.id}`} style={editLink}>Editar</Link>
+                        {isAdmin && (
+                          <button style={editLink} onClick={() => setEditPrecios({
+                            id: p.id, nombre: p.nombre_comercial,
+                            precio: p.precio_costo != null ? String(p.precio_costo) : "",
+                            minimo: p.stock_minimo != null ? String(p.stock_minimo) : "",
+                          })}>
+                            $ Precio / Mín.
+                          </button>
                         )}
-                        <button style={editLink} onClick={() => setEditPrecios({
-                          id: p.id, nombre: p.nombre_comercial,
-                          precio: p.precio_costo != null ? String(p.precio_costo) : "",
-                          minimo: p.stock_minimo != null ? String(p.stock_minimo) : "",
-                        })}>
-                          $ Precio / Mín.
-                        </button>
                       </div>
                       )}
                     </td>

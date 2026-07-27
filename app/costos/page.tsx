@@ -21,8 +21,9 @@ type OTData = {
 
 type MovData = {
   ot_id: string;
+  producto_id: string;
   cantidad: number;
-  precio_unitario: number;
+  precio_unitario: number | null;
   unidad: string;
   producto: { nombre_comercial: string } | null;
 };
@@ -43,11 +44,13 @@ function CostosContent() {
   const { campoId, campoNombre } = useCampo();
 
   const currentYear = new Date().getFullYear();
-  const [año, setAño] = useState(currentYear);
+  const [desde, setDesde] = useState(`${currentYear}-01`);
+  const [hasta, setHasta] = useState(`${currentYear}-12`);
   const [dim, setDim] = useState<Dimension>("producto");
   const [loading, setLoading] = useState(true);
   const [ots, setOts] = useState<OTData[]>([]);
   const [movs, setMovs] = useState<MovData[]>([]);
+  const [costosAvg, setCostosAvg] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     const init = async () => {
@@ -57,32 +60,52 @@ function CostosContent() {
       await load(empresaId);
     };
     init();
-  }, [empresaId, campoId, año]);
+  }, [empresaId, campoId, desde, hasta]);
 
   const load = async (eid: string) => {
     setLoading(true);
-    const desde = `${año}-01-01`;
-    const hasta = `${año}-12-31`;
+    const desdeDate = `${desde}-01`;
+    const [hastaY, hastaM] = hasta.split("-").map(Number);
+    const hastaDate = new Date(hastaY, hastaM, 0).toISOString().slice(0, 10);
 
     const baseOT = supabase
       .from("ordenes_trabajo")
       .select("id, funcion, plagas_objetivo, objetivo_principal, fecha_aplicacion, ot_cuarteles(superficie_ha, cuartel:cuarteles(codigo, especie, variedad))")
       .eq("empresa_id", eid)
       .eq("estado", "finalizada")
-      .gte("fecha_aplicacion", desde)
-      .lte("fecha_aplicacion", hasta);
+      .gte("fecha_aplicacion", desdeDate)
+      .lte("fecha_aplicacion", hastaDate);
     const { data: otData } = await (campoId ? baseOT.eq("campo_id", campoId) : baseOT);
     const otList = ((otData ?? []) as unknown as OTData[]);
     setOts(otList);
+
+    // Costo promedio ponderado por producto desde entradas, para valorizar salidas sin precio explícito
+    const { data: costosData } = await supabase
+      .from("stock_movimientos")
+      .select("producto_id, cantidad, precio_unitario")
+      .eq("empresa_id", eid)
+      .eq("tipo", "entrada")
+      .not("precio_unitario", "is", null);
+    const costoAcc = new Map<string, { v: number; q: number }>();
+    for (const c of (costosData ?? []) as { producto_id: string; cantidad: number; precio_unitario: number }[]) {
+      const acc = costoAcc.get(c.producto_id) ?? { v: 0, q: 0 };
+      acc.v += Number(c.cantidad) * Number(c.precio_unitario);
+      acc.q += Number(c.cantidad);
+      costoAcc.set(c.producto_id, acc);
+    }
+    const newCostosAvg = new Map<string, number>();
+    for (const [pid, acc] of costoAcc) {
+      if (acc.q > 0) newCostosAvg.set(pid, acc.v / acc.q);
+    }
+    setCostosAvg(newCostosAvg);
 
     if (otList.length === 0) { setMovs([]); setLoading(false); return; }
 
     const baseMovs = supabase
       .from("stock_movimientos")
-      .select("ot_id, cantidad, precio_unitario, unidad, producto:productos(nombre_comercial)")
+      .select("ot_id, producto_id, cantidad, precio_unitario, unidad, producto:productos(nombre_comercial)")
       .eq("empresa_id", eid)
       .in("tipo", ["salida", "salida_barbecho"])
-      .not("precio_unitario", "is", null)
       .in("ot_id", otList.map(o => o.id));
     const { data: movData } = await (campoId ? baseMovs.eq("campo_id", campoId) : baseMovs);
     setMovs(((movData ?? []) as unknown as MovData[]));
@@ -99,7 +122,7 @@ function CostosContent() {
   }
   for (const m of movs) {
     const e = otMap.get(m.ot_id);
-    if (e) e.costo += m.cantidad * m.precio_unitario;
+    if (e) e.costo += m.cantidad * (m.precio_unitario ?? costosAvg.get(m.producto_id) ?? 0);
   }
 
   const otEntries = [...otMap.values()].filter(e => e.costo > 0);
@@ -114,7 +137,7 @@ function CostosContent() {
     const prodData = new Map<string, { costo: number; otSet: Set<string> }>();
     for (const m of movs) {
       const nombre = m.producto?.nombre_comercial ?? "Sin nombre";
-      const costo = m.cantidad * m.precio_unitario;
+      const costo = m.cantidad * (m.precio_unitario ?? costosAvg.get(m.producto_id) ?? 0);
       const p = prodData.get(nombre) ?? { costo: 0, otSet: new Set() };
       p.costo += costo;
       p.otSet.add(m.ot_id);
@@ -203,11 +226,11 @@ function CostosContent() {
             <h1 style={pageTitle}>Análisis de costos — {campoNombre || empresaNombre}</h1>
             <p style={pageSubtitle}>Costo promedio ponderado basado en precios de ingresos de bodega</p>
           </div>
-          <select value={año} onChange={e => setAño(Number(e.target.value))} style={yearSelect}>
-            {[currentYear + 1, currentYear, currentYear - 1, currentYear - 2].map(y => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+            <input type="month" value={desde} onChange={e => setDesde(e.target.value)} style={yearSelect} />
+            <span style={{ color: "#6b7280", fontSize: "13px" }}>hasta</span>
+            <input type="month" value={hasta} onChange={e => setHasta(e.target.value)} style={yearSelect} />
+          </div>
         </div>
 
         {/* ── Tabs dimensión ── */}
@@ -226,7 +249,7 @@ function CostosContent() {
             {/* ── KPI cards ── */}
             <div style={kpiBar}>
               <div style={kpiCard}>
-                <span style={kpiLabel}>Costo total {año}</span>
+                <span style={kpiLabel}>Costo total período</span>
                 <span style={kpiValue}>{fmt$(totalCosto)}</span>
               </div>
               <div style={kpiCard}>
@@ -251,7 +274,7 @@ function CostosContent() {
             {rows.length === 0 ? (
               <div style={emptyBox}>
                 <p style={{ fontSize: "15px", color: "#6b7280", marginBottom: "6px" }}>
-                  Sin datos de costo para {año}{campoNombre ? ` · ${campoNombre}` : ""}.
+                  Sin datos de costo para el período seleccionado{campoNombre ? ` · ${campoNombre}` : ""}.
                 </p>
                 <p style={{ fontSize: "13px", color: "#9ca3af" }}>
                   Registrá ingresos de bodega con precio y finalizá OTs para ver el análisis.
