@@ -64,7 +64,7 @@ function NuevoProductoContent() {
       if (err) { setError(`Error al guardar: ${err.message} (código: ${err.code})`); return; }
       if (!data?.id) { setError("El producto no se guardó correctamente. Intentá nuevamente."); return; }
       setSaved(true);
-      setTimeout(() => { window.location.href = "/productos"; }, 900);
+      setTimeout(() => { window.location.href = `/productos/${data.id}`; }, 900);
     } catch (e: unknown) {
       setSaving(false);
       setError(`Error inesperado: ${e instanceof Error ? e.message : String(e)}`);
