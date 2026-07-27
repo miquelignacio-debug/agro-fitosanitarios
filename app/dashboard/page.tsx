@@ -42,6 +42,20 @@ type Costo = {
   costo: number | null;
 };
 
+function calcConsumoPlaneado(dosis: number, dosisUnidad: string, totalHa: number, mojamientoLtha: number): number {
+  const u = dosisUnidad.toLowerCase().replace(/\s+/g, "");
+  const volTotal = totalHa * mojamientoLtha;
+  if (u.includes("/100lt") || u.includes("/100l")) {
+    const raw = dosis * volTotal / 100;
+    return (u.startsWith("cc") || u.startsWith("ml") || u.startsWith("g")) ? raw / 1000 : raw;
+  }
+  if (u.startsWith("lt/ha") || u.startsWith("l/ha")) return dosis * totalHa;
+  if (u.startsWith("cc/ha") || u.startsWith("ml/ha")) return dosis * totalHa / 1000;
+  if (u.startsWith("kg/ha")) return dosis * totalHa;
+  if (u.startsWith("g/ha")) return dosis * totalHa / 1000;
+  return 0;
+}
+
 function DashboardContent() {
   const router = useRouter();
   const { empresaId, empresaNombre } = useEmpresa();
@@ -175,53 +189,74 @@ function DashboardContent() {
   const loadCostos = async (eid: string) => {
     const anoActual = new Date().getFullYear();
     const desde = `${anoActual}-01-01`;
+    const hasta = `${anoActual}-12-31`;
 
-    // Costos desde salidas de OT que tienen precio_unitario (costo promedio ponderado al momento de la salida)
-    const baseMovs = supabase
-      .from("stock_movimientos")
-      .select("producto_id, cantidad, precio_unitario, unidad, producto:productos(nombre_comercial)")
-      .eq("empresa_id", eid)
-      .in("tipo", ["salida", "salida_barbecho"])
-      .not("ot_id", "is", null)
-      .not("precio_unitario", "is", null)
-      .gte("fecha", desde);
-    const { data: movs } = await (campoId ? baseMovs.eq("campo_id", campoId) : baseMovs);
-
-    // Hectáreas de OTs finalizadas en el año (para costo/ha)
-    const baseHa = supabase
+    // OTs finalizadas del año con sus productos y cuarteles
+    const baseOT = supabase
       .from("ordenes_trabajo")
-      .select("ot_cuarteles(superficie_ha)")
+      .select(`id, mojamiento_solicitado_ltha, mojamiento_real_ltha,
+        ot_cuarteles(superficie_ha),
+        ot_productos(producto_id, dosis_real, dosis_unidad, producto:productos(nombre_comercial))`)
       .eq("empresa_id", eid)
       .eq("estado", "finalizada")
-      .gte("fecha_aplicacion", desde);
-    const { data: otsHa } = await (campoId ? baseHa.eq("campo_id", campoId) : baseHa);
+      .gte("fecha_aplicacion", desde)
+      .lte("fecha_aplicacion", hasta);
+    const { data: otData } = await (campoId ? baseOT.eq("campo_id", campoId) : baseOT);
 
-    if (!movs) return;
+    // Costo promedio ponderado por producto desde entradas de bodega
+    const { data: costosData } = await supabase
+      .from("stock_movimientos")
+      .select("producto_id, cantidad, precio_unitario")
+      .eq("empresa_id", eid)
+      .eq("tipo", "entrada")
+      .not("precio_unitario", "is", null);
 
-    const costoMap = new Map<string, Costo>();
-    for (const m of movs as unknown as { producto_id: string; cantidad: number; precio_unitario: number; unidad: string; producto: { nombre_comercial: string } }[]) {
-      const nombre = m.producto?.nombre_comercial ?? m.producto_id;
-      const costo = m.cantidad * m.precio_unitario;
-      const prev = costoMap.get(nombre);
-      if (prev) {
-        prev.consumo += m.cantidad;
-        prev.costo = (prev.costo ?? 0) + costo;
-      } else {
-        costoMap.set(nombre, { producto: nombre, consumo: m.cantidad, unidad: m.unidad, precio: m.precio_unitario, costo });
-      }
+    const costoAcc = new Map<string, { v: number; q: number }>();
+    for (const c of (costosData ?? []) as { producto_id: string; cantidad: number; precio_unitario: number }[]) {
+      const acc = costoAcc.get(c.producto_id) ?? { v: 0, q: 0 };
+      acc.v += Number(c.cantidad) * Number(c.precio_unitario);
+      acc.q += Number(c.cantidad);
+      costoAcc.set(c.producto_id, acc);
+    }
+    const costosAvg = new Map<string, number>();
+    for (const [pid, acc] of costoAcc) {
+      if (acc.q > 0) costosAvg.set(pid, acc.v / acc.q);
     }
 
-    const totalHa = (otsHa ?? []).reduce((s: number, ot: unknown) => {
-      const o = ot as { ot_cuarteles: { superficie_ha: number }[] };
-      return s + o.ot_cuarteles.reduce((ss, c) => ss + c.superficie_ha, 0);
-    }, 0);
+    type OTCosto = {
+      mojamiento_solicitado_ltha: number | null;
+      mojamiento_real_ltha: number | null;
+      ot_cuarteles: { superficie_ha: number }[];
+      ot_productos: { producto_id: string; dosis_real: number; dosis_unidad: string; producto: { nombre_comercial: string } | null }[];
+    };
 
-    const all = Array.from(costoMap.values()).filter(c => (c.costo ?? 0) > 0);
-    const total = all.reduce((s, c) => s + (c.costo ?? 0), 0);
-    const top = [...all].sort((a, b) => (b.costo ?? 0) - (a.costo ?? 0)).slice(0, 5);
-    const porHa = totalHa > 0 ? total / totalHa : 0;
+    const ots = ((otData ?? []) as unknown as OTCosto[]);
+    const prodMap = new Map<string, number>();
+    let totalCosto = 0;
+    let totalHa = 0;
 
-    setCostos({ total, porHa, top });
+    for (const ot of ots) {
+      const ha  = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
+      const moj = ot.mojamiento_real_ltha ?? ot.mojamiento_solicitado_ltha ?? 0;
+      let otCosto = 0;
+      for (const p of ot.ot_productos) {
+        const consumo = calcConsumoPlaneado(Number(p.dosis_real), p.dosis_unidad, ha, moj);
+        const costo   = consumo * (costosAvg.get(p.producto_id) ?? 0);
+        if (costo === 0) continue;
+        otCosto += costo;
+        const nombre = p.producto?.nombre_comercial ?? "Sin nombre";
+        prodMap.set(nombre, (prodMap.get(nombre) ?? 0) + costo);
+      }
+      if (otCosto > 0) { totalCosto += otCosto; totalHa += ha; }
+    }
+
+    const porHa = totalHa > 0 ? totalCosto / totalHa : 0;
+    const top = Array.from(prodMap.entries())
+      .map(([producto, costo]) => ({ producto, consumo: 0, unidad: "", precio: null, costo }))
+      .sort((a, b) => b.costo - a.costo)
+      .slice(0, 5);
+
+    setCostos({ total: totalCosto, porHa, top });
   };
 
   return (
