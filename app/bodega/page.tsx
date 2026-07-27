@@ -897,8 +897,9 @@ function BodegaContent() {
                         );
                       })()}
                       {(() => {
-                        const costo = costosMap.get(s.producto_id);
-                        const valor = costo != null ? Number(s.cantidad_disponible) * costo : null;
+                        // precio_costo (ficha producto) es más confiable que costosMap (entradas históricas)
+                        const costoUnit = s.producto.precio_costo ?? costosMap.get(s.producto_id) ?? null;
+                        const valor = costoUnit != null && costoUnit > 0 ? Number(s.cantidad_disponible) * costoUnit : null;
                         const fmtMM = (v: number) => `$${(v / 1_000_000).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MM`;
                         return (
                           <td style={{ ...td, textAlign: "right", color: valor != null ? "#1a4731" : "#d1d5db", fontWeight: valor != null ? 700 : 400 }}>
@@ -924,17 +925,15 @@ function BodegaContent() {
               </tbody>
               {stockFiltrado.length > 0 && (() => {
                 const totalValor = stockFiltrado.reduce((sum, s) => {
-                  const costo = costosMap.get(s.producto_id);
-                  return costo != null ? sum + Number(s.cantidad_disponible) * costo : sum;
+                  const costoUnit = s.producto.precio_costo ?? costosMap.get(s.producto_id) ?? null;
+                  return costoUnit != null && costoUnit > 0 ? sum + Number(s.cantidad_disponible) * costoUnit : sum;
                 }, 0);
                 return totalValor > 0 ? (
                   <tfoot>
                     <tr style={{ background: "#f0f4f2" }}>
                       <td colSpan={6} style={{ ...td, fontWeight: 800, color: "#1a4731", textAlign: "right" }}>Total valor en bodega</td>
                       <td style={{ ...td, textAlign: "right", fontWeight: 800, color: "#1a4731" }}>
-                        {totalValor >= 1_000_000
-                          ? `$${(totalValor / 1_000_000).toLocaleString("es-CL", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MM`
-                          : `$${totalValor.toLocaleString("es-CL", { maximumFractionDigits: 0 })}`}
+                        {`$${(totalValor / 1_000_000).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MM`}
                       </td>
                       <td style={td} />
                     </tr>
