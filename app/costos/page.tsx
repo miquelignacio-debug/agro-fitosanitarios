@@ -16,16 +16,10 @@ type OTData = {
   plagas_objetivo: string | null;
   objetivo_principal: string | null;
   fecha_aplicacion: string | null;
+  mojamiento_solicitado_ltha: number | null;
+  mojamiento_real_ltha: number | null;
   ot_cuarteles: { superficie_ha: number; cuartel: { codigo: string; especie: string; variedad: string } }[];
-};
-
-type MovData = {
-  ot_id: string;
-  producto_id: string;
-  cantidad: number;
-  precio_unitario: number | null;
-  unidad: string;
-  producto: { nombre_comercial: string } | null;
+  ot_productos: { producto_id: string; dosis_real: number; dosis_unidad: string; producto: { nombre_comercial: string } | null }[];
 };
 
 type Row = { label: string; aplicaciones: number; ha: number; costoTotal: number; costoHa: number };
@@ -38,6 +32,20 @@ const DIMS: { key: Dimension; label: string; nota?: string }[] = [
   { key: "mes",      label: "Por mes" },
 ];
 
+function calcConsumoPlaneado(dosis: number, dosisUnidad: string, totalHa: number, mojamientoLtha: number): number {
+  const u = dosisUnidad.toLowerCase().replace(/\s+/g, "");
+  const volTotal = totalHa * mojamientoLtha;
+  if (u.includes("/100lt") || u.includes("/100l")) {
+    const raw = dosis * volTotal / 100;
+    return (u.startsWith("cc") || u.startsWith("ml") || u.startsWith("g")) ? raw / 1000 : raw;
+  }
+  if (u.startsWith("lt/ha") || u.startsWith("l/ha")) return dosis * totalHa;
+  if (u.startsWith("cc/ha") || u.startsWith("ml/ha")) return dosis * totalHa / 1000;
+  if (u.startsWith("kg/ha")) return dosis * totalHa;
+  if (u.startsWith("g/ha")) return dosis * totalHa / 1000;
+  return 0;
+}
+
 function CostosContent() {
   const router = useRouter();
   const { empresaId, empresaNombre } = useEmpresa();
@@ -49,7 +57,6 @@ function CostosContent() {
   const [dim, setDim] = useState<Dimension>("producto");
   const [loading, setLoading] = useState(true);
   const [ots, setOts] = useState<OTData[]>([]);
-  const [movs, setMovs] = useState<MovData[]>([]);
   const [costosAvg, setCostosAvg] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
@@ -70,16 +77,18 @@ function CostosContent() {
 
     const baseOT = supabase
       .from("ordenes_trabajo")
-      .select("id, funcion, plagas_objetivo, objetivo_principal, fecha_aplicacion, ot_cuarteles(superficie_ha, cuartel:cuarteles(codigo, especie, variedad))")
+      .select(`id, funcion, plagas_objetivo, objetivo_principal, fecha_aplicacion,
+        mojamiento_solicitado_ltha, mojamiento_real_ltha,
+        ot_cuarteles(superficie_ha, cuartel:cuarteles(codigo, especie, variedad)),
+        ot_productos(producto_id, dosis_real, dosis_unidad, producto:productos(nombre_comercial))`)
       .eq("empresa_id", eid)
       .eq("estado", "finalizada")
       .gte("fecha_aplicacion", desdeDate)
       .lte("fecha_aplicacion", hastaDate);
     const { data: otData } = await (campoId ? baseOT.eq("campo_id", campoId) : baseOT);
-    const otList = ((otData ?? []) as unknown as OTData[]);
-    setOts(otList);
+    setOts(((otData ?? []) as unknown as OTData[]));
 
-    // Costo promedio ponderado por producto desde entradas, para valorizar salidas sin precio explícito
+    // Costo promedio ponderado por producto desde entradas de bodega
     const { data: costosData } = await supabase
       .from("stock_movimientos")
       .select("producto_id, cantidad, precio_unitario")
@@ -98,34 +107,25 @@ function CostosContent() {
       if (acc.q > 0) newCostosAvg.set(pid, acc.v / acc.q);
     }
     setCostosAvg(newCostosAvg);
-
-    if (otList.length === 0) { setMovs([]); setLoading(false); return; }
-
-    const baseMovs = supabase
-      .from("stock_movimientos")
-      .select("ot_id, producto_id, cantidad, precio_unitario, unidad, producto:productos(nombre_comercial)")
-      .eq("empresa_id", eid)
-      .in("tipo", ["salida", "salida_barbecho"])
-      .in("ot_id", otList.map(o => o.id));
-    const { data: movData } = await (campoId ? baseMovs.eq("campo_id", campoId) : baseMovs);
-    setMovs(((movData ?? []) as unknown as MovData[]));
     setLoading(false);
   };
 
   // ── Cálculo ─────────────────────────────────────────────────────────────────
 
-  // Costo y ha por OT
-  const otMap = new Map<string, { costo: number; ha: number; ot: OTData }>();
+  // Costo total por OT: dosis × ha × mojamiento × precio promedio de cada producto
+  const otCostMap = new Map<string, { costo: number; ha: number; ot: OTData }>();
   for (const ot of ots) {
-    const ha = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
-    otMap.set(ot.id, { costo: 0, ha, ot });
-  }
-  for (const m of movs) {
-    const e = otMap.get(m.ot_id);
-    if (e) e.costo += m.cantidad * (m.precio_unitario ?? costosAvg.get(m.producto_id) ?? 0);
+    const ha  = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
+    const moj = ot.mojamiento_real_ltha ?? ot.mojamiento_solicitado_ltha ?? 0;
+    let costo = 0;
+    for (const p of ot.ot_productos) {
+      const consumo = calcConsumoPlaneado(Number(p.dosis_real), p.dosis_unidad, ha, moj);
+      costo += consumo * (costosAvg.get(p.producto_id) ?? 0);
+    }
+    otCostMap.set(ot.id, { costo, ha, ot });
   }
 
-  const otEntries = [...otMap.values()].filter(e => e.costo > 0);
+  const otEntries  = [...otCostMap.values()].filter(e => e.costo > 0);
   const totalCosto = otEntries.reduce((s, e) => s + e.costo, 0);
   const totalHa    = otEntries.reduce((s, e) => s + e.ha, 0);
 
@@ -135,20 +135,26 @@ function CostosContent() {
 
   if (dim === "producto") {
     const prodData = new Map<string, { costo: number; otSet: Set<string> }>();
-    for (const m of movs) {
-      const nombre = m.producto?.nombre_comercial ?? "Sin nombre";
-      const costo = m.cantidad * (m.precio_unitario ?? costosAvg.get(m.producto_id) ?? 0);
-      const p = prodData.get(nombre) ?? { costo: 0, otSet: new Set() };
-      p.costo += costo;
-      p.otSet.add(m.ot_id);
-      prodData.set(nombre, p);
+    for (const ot of ots) {
+      const ha  = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
+      const moj = ot.mojamiento_real_ltha ?? ot.mojamiento_solicitado_ltha ?? 0;
+      for (const p of ot.ot_productos) {
+        const consumo = calcConsumoPlaneado(Number(p.dosis_real), p.dosis_unidad, ha, moj);
+        const costo   = consumo * (costosAvg.get(p.producto_id) ?? 0);
+        if (costo === 0) continue;
+        const nombre  = p.producto?.nombre_comercial ?? "Sin nombre";
+        const entry   = prodData.get(nombre) ?? { costo: 0, otSet: new Set() };
+        entry.costo += costo;
+        entry.otSet.add(ot.id);
+        prodData.set(nombre, entry);
+      }
     }
     for (const [nombre, { costo, otSet }] of prodData) {
-      const ha = [...otSet].reduce((s, id) => s + (otMap.get(id)?.ha ?? 0), 0);
+      const ha = [...otSet].reduce((s, id) => s + (otCostMap.get(id)?.ha ?? 0), 0);
       grouped.set(nombre, { costoTotal: costo, ha, aplicaciones: otSet.size });
     }
   } else {
-    for (const { costo, ha, ot } of otMap.values()) {
+    for (const { costo, ha, ot } of otCostMap.values()) {
       if (costo === 0) continue;
 
       if (dim === "cuartel") {
@@ -189,14 +195,10 @@ function CostosContent() {
 
   const rows: Row[] = Array.from(grouped.entries())
     .map(([label, { costoTotal, ha, aplicaciones }]) => ({
-      label,
-      aplicaciones,
-      ha,
-      costoTotal,
+      label, aplicaciones, ha, costoTotal,
       costoHa: ha > 0 ? costoTotal / ha : 0,
     }));
 
-  // Por mes: ordenar cronológicamente; el resto: por costo desc
   if (dim === "mes") {
     const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
     rows.sort((a, b) => {
@@ -210,8 +212,9 @@ function CostosContent() {
     rows.sort((a, b) => b.costoTotal - a.costoTotal);
   }
 
-  const totalRows   = rows.reduce((s, r) => s + r.costoTotal, 0);
+  const totalRows = rows.reduce((s, r) => s + r.costoTotal, 0);
   const fmt$  = (n: number) => `$${n.toLocaleString("es-CL", { maximumFractionDigits: 0 })}`;
+  const fmtMM = (n: number) => `$${(n / 1_000_000).toLocaleString("es-CL", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MM`;
   const fmtHa = (n: number) => n.toLocaleString("es-CL", { maximumFractionDigits: 1 });
   const dimInfo = DIMS.find(d => d.key === dim)!;
 
@@ -224,7 +227,7 @@ function CostosContent() {
         <div style={pageHeader}>
           <div>
             <h1 style={pageTitle}>Análisis de costos — {campoNombre || empresaNombre}</h1>
-            <p style={pageSubtitle}>Costo promedio ponderado basado en precios de ingresos de bodega</p>
+            <p style={pageSubtitle}>Costo calculado desde dosis de OTs × costo promedio ponderado de ingresos a bodega</p>
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
             <input type="month" value={desde} onChange={e => setDesde(e.target.value)} style={yearSelect} />
@@ -250,7 +253,7 @@ function CostosContent() {
             <div style={kpiBar}>
               <div style={kpiCard}>
                 <span style={kpiLabel}>Costo total período</span>
-                <span style={kpiValue}>{fmt$(totalCosto)}</span>
+                <span style={kpiValue}>{fmtMM(totalCosto)}</span>
               </div>
               <div style={kpiCard}>
                 <span style={kpiLabel}>Hectáreas tratadas</span>
@@ -262,7 +265,7 @@ function CostosContent() {
               </div>
               <div style={kpiCard}>
                 <span style={kpiLabel}>OTs con costo</span>
-                <span style={kpiValue}>{otEntries.length}</span>
+                <span style={kpiValue}>{otEntries.length} / {ots.length}</span>
               </div>
             </div>
 
@@ -277,7 +280,7 @@ function CostosContent() {
                   Sin datos de costo para el período seleccionado{campoNombre ? ` · ${campoNombre}` : ""}.
                 </p>
                 <p style={{ fontSize: "13px", color: "#9ca3af" }}>
-                  Registrá ingresos de bodega con precio y finalizá OTs para ver el análisis.
+                  Registrá ingresos de bodega con precio para que los costos de las OTs puedan calcularse.
                 </p>
               </div>
             ) : (
