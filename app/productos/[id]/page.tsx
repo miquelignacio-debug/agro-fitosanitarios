@@ -7,7 +7,7 @@ import Nav from "@/lib/nav";
 import { FUNCIONES_FITOSANITARIAS, TOXICIDAD_ABEJAS_LABEL, type ToxicidadAbejas } from "@/lib/types";
 import { Suspense } from "react";
 
-const UNIDADES = ["lt/ha", "cc/ha", "kg/ha", "g/ha", "g/100lt", "cc/100lt", "lt/100lt"];
+const UNIDADES = ["lt/ha", "kg/ha", "cc/ha", "g/ha", "lt/100lt", "kg/100lt", "cc/100lt", "g/100lt"];
 
 function EditarProductoContent() {
   const router = useRouter();

@@ -279,7 +279,7 @@ function CalculadoraContent() {
                   <div style={{ flex: "1 1 120px" }}>
                     <label style={labelStyle}>Unidad</label>
                     <select value={dosisUnidad} onChange={e => setDosisUnidad(e.target.value)} style={inputStyle}>
-                      {["cc/100lt", "g/100lt", "lt/ha", "cc/ha", "kg/ha", "g/ha"].map(u => (
+                      {["lt/ha", "kg/ha", "cc/ha", "g/ha", "lt/100lt", "kg/100lt", "cc/100lt", "g/100lt"].map(u => (
                         <option key={u} value={u}>{u}</option>
                       ))}
                     </select>

@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { FUNCIONES_FITOSANITARIAS } from "@/lib/types";
 
-const UNIDADES = ["lt/ha", "cc/ha", "kg/ha", "g/ha", "g/100lt", "cc/100lt", "lt/100lt"];
+const UNIDADES = ["lt/ha", "kg/ha", "cc/ha", "g/ha", "lt/100lt", "kg/100lt", "cc/100lt", "g/100lt"];
 
 import { Suspense } from "react";
 function NuevoProductoContent() {
@@ -41,25 +41,32 @@ function NuevoProductoContent() {
       .map((s) => s.trim())
       .filter(Boolean);
 
-    const { error: err } = await supabase.from("productos").insert({
-      nombre_comercial: nombre.trim(),
-      numero_registro: registro.trim() || null,
-      ingrediente_activo: ia.trim() || null,
-      concentracion_ia: concentracionIa.trim() || null,
-      unidad_bodega: unidadBodega,
-      formulacion: formulacion.trim() || null,
-      tipo_funcion: funciones.length ? funciones : null,
-      unidad_dosis: unidadDosis,
-      phi_dias: parseInt(phi) || 0,
-      rei_horas: parseInt(rei) || 0,
-      especies_autorizadas: especies.length ? especies : null,
-      max_ia_descripcion: maxIa.trim() || null,
-      fuente: "manual",
-    });
+    try {
+      const { data, error: err } = await supabase.from("productos").insert({
+        nombre_comercial: nombre.trim(),
+        numero_registro: registro.trim() || null,
+        ingrediente_activo: ia.trim() || null,
+        concentracion_ia: concentracionIa.trim() || null,
+        unidad_bodega: unidadBodega,
+        formulacion: formulacion.trim() || null,
+        tipo_funcion: funciones.length ? funciones : null,
+        unidad_dosis: unidadDosis,
+        phi_dias: parseInt(phi) || 0,
+        rei_horas: parseInt(rei) || 0,
+        especies_autorizadas: especies.length ? especies : null,
+        max_ia_descripcion: maxIa.trim() || null,
+        fuente: "manual",
+        activo: true,
+      }).select("id").single();
 
-    setSaving(false);
-    if (err) { setError(err.message); return; }
-    router.push("/productos");
+      setSaving(false);
+      if (err) { setError(`Error al guardar: ${err.message} (código: ${err.code})`); return; }
+      if (!data?.id) { setError("El producto no se guardó correctamente. Intentá nuevamente."); return; }
+      router.push("/productos");
+    } catch (e: unknown) {
+      setSaving(false);
+      setError(`Error inesperado: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   return (
