@@ -39,7 +39,7 @@ function IngresoContent() {
       if (!user) { router.push("/login"); return; }
 
       const [{ data: prod }, { data: usr }, { data: prov }] = await Promise.all([
-        supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(5000),
+        supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(100000),
         supabase.from("usuarios").select("*").eq("id", user.id).single(),
         supabase.from("proveedores").select("nombre").eq("activo", true).order("nombre"),
       ]);

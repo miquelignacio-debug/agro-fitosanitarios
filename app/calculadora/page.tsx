@@ -31,7 +31,7 @@ function CalculadoraContent() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const { data: prod } = await supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(5000);
+      const { data: prod } = await supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(100000);
       setProductos((prod as Producto[]) || []);
       setLoading(false);
     };

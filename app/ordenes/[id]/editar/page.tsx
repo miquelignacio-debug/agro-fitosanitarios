@@ -68,7 +68,7 @@ function EditarOTContent() {
       ] = await Promise.all([
         supabase.from("cuarteles").select("*").eq("activo", true).order("codigo"),
         supabase.from("maquinaria").select("*").eq("activo", true).order("codigo"),
-        supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(5000),
+        supabase.from("productos").select("*").eq("activo", true).order("nombre_comercial").limit(100000),
         supabase.from("personal").select("*").eq("activo", true).order("nombre"),
         supabase.from("plagas_objetivos").select("*").eq("activo", true).order("tipo").order("nombre"),
       ]);
