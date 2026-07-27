@@ -14,6 +14,7 @@ function NuevoProductoContent() {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
 
   const [nombre, setNombre] = useState("");
   const [registro, setRegistro] = useState("");
@@ -62,7 +63,8 @@ function NuevoProductoContent() {
       setSaving(false);
       if (err) { setError(`Error al guardar: ${err.message} (código: ${err.code})`); return; }
       if (!data?.id) { setError("El producto no se guardó correctamente. Intentá nuevamente."); return; }
-      router.push("/productos");
+      setSaved(true);
+      setTimeout(() => { window.location.href = "/productos"; }, 900);
     } catch (e: unknown) {
       setSaving(false);
       setError(`Error inesperado: ${e instanceof Error ? e.message : String(e)}`);
@@ -157,6 +159,7 @@ function NuevoProductoContent() {
           </section>
 
           {error && <p style={errorStyle}>{error}</p>}
+          {saved && <p style={successStyle}>✓ Producto guardado correctamente. Redirigiendo...</p>}
 
           <div style={footer}>
             <button
@@ -166,7 +169,7 @@ function NuevoProductoContent() {
             >
               Cancelar
             </button>
-            <button onClick={handleSave} style={saveBtn} disabled={saving}>
+            <button onClick={handleSave} style={saveBtn} disabled={saving || saved}>
               {saving ? "Guardando..." : "Guardar producto"}
             </button>
           </div>
@@ -201,6 +204,7 @@ const chip: React.CSSProperties = { padding: "5px 12px", borderRadius: "999px", 
 const chipActive: React.CSSProperties = { background: "#1a4731", color: "#fff", borderColor: "#1a4731" };
 const footer: React.CSSProperties = { padding: "20px 28px", display: "flex", justifyContent: "flex-end", gap: "10px" };
 const errorStyle: React.CSSProperties = { margin: "0 28px 12px", fontSize: "13px", color: "#dc2626", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "8px", padding: "10px 14px" };
+const successStyle: React.CSSProperties = { margin: "0 28px 12px", fontSize: "13px", color: "#15803d", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: "8px", padding: "10px 14px" };
 const cancelBtn: React.CSSProperties = { padding: "9px 20px", borderRadius: "8px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "14px", cursor: "pointer" };
 const saveBtn: React.CSSProperties = { padding: "9px 20px", borderRadius: "8px", background: "#1a4731", color: "#fff", fontWeight: 700, fontSize: "14px", border: "none", cursor: "pointer" };
 export default function NuevoProductoPage() { return <Suspense><NuevoProductoContent /></Suspense>; }
