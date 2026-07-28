@@ -66,6 +66,7 @@ function NuevaOTContent() {
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
+      try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
 
@@ -101,6 +102,10 @@ function NuevaOTContent() {
       setPersonal((pers as Personal[]) || []);
       setCatalogPlagas((plagas as CatalogPlaga[]) || []);
       setLoading(false);
+      } catch (e) {
+        console.error("Error cargando formulario OT:", e);
+        setLoading(false);
+      }
     };
     init();
   }, []);
@@ -915,14 +920,14 @@ const formCard: React.CSSProperties     = { background: "#fff", borderRadius: "1
 const section: React.CSSProperties      = { padding: "22px 26px", borderBottom: "1px solid #f3f4f6" };
 const sectionTitle: React.CSSProperties = { fontSize: "13px", fontWeight: 700, color: "#1a4731", marginBottom: "14px", textTransform: "uppercase", letterSpacing: "0.05em" };
 
-const grid3: React.CSSProperties        = { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "14px" };
+const grid3: React.CSSProperties        = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "14px" };
 const labelStyle: React.CSSProperties   = { fontSize: "12px", fontWeight: 700, color: "#374151" };
 const hintStyle: React.CSSProperties    = { fontSize: "11px", color: "#92400e", marginTop: "2px" };
 const inputStyle: React.CSSProperties   = { padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "14px", background: "#fafafa", color: "#111", width: "100%", boxSizing: "border-box" };
 const chipRow: React.CSSProperties      = { display: "flex", flexWrap: "wrap", gap: "6px" };
 const chip: React.CSSProperties         = { padding: "4px 10px", borderRadius: "999px", border: "1.5px solid #d1d5db", background: "#fff", fontSize: "11px", fontWeight: 600, cursor: "pointer", color: "#374151" };
 const chipActive: React.CSSProperties   = { background: "#1a4731", color: "#fff", borderColor: "#1a4731" };
-const rowWrap: React.CSSProperties      = { display: "flex", gap: "10px", alignItems: "flex-end", marginBottom: "10px" };
+const rowWrap: React.CSSProperties      = { display: "flex", gap: "10px", alignItems: "flex-end", marginBottom: "10px", flexWrap: "wrap" };
 const addBtn: React.CSSProperties       = { marginTop: "6px", padding: "6px 14px", borderRadius: "8px", border: "1.5px solid #1a4731", background: "transparent", color: "#1a4731", fontSize: "13px", fontWeight: 700, cursor: "pointer" };
 const removeBtn: React.CSSProperties    = { padding: "8px 10px", borderRadius: "8px", border: "1px solid #fca5a5", background: "transparent", color: "#dc2626", fontSize: "14px", cursor: "pointer", flexShrink: 0, marginBottom: "1px" };
 const ppeGrid: React.CSSProperties      = { display: "flex", flexWrap: "wrap", gap: "16px" };

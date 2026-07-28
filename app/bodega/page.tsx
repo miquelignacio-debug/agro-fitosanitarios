@@ -175,7 +175,7 @@ function BodegaContent() {
       .from("ordenes_trabajo")
       .select("id, estado, mojamiento_solicitado_ltha, campo_id, ot_productos(producto_id, dosis_real, dosis_unidad, producto:productos(unidad_bodega)), ot_cuarteles(superficie_ha)")
       .eq("empresa_id", eid)
-      .in("estado", ["borrador", "emitida", "en_ejecucion"]);
+      .in("estado", ["emitida", "en_ejecucion"]);
 
     const baseCostos = supabase
       .from("stock_movimientos")
@@ -476,6 +476,7 @@ function BodegaContent() {
     setSalidaVentaSaving(true);
     const { error } = await supabase.from("stock_movimientos").insert({
       empresa_id:      empresaId,
+      campo_id:        campoId || null,
       producto_id:     productoId,
       tipo,
       cantidad:        parseFloat(cantidad),
@@ -1314,7 +1315,7 @@ const filterInput: React.CSSProperties  = { padding: "7px 12px", borderRadius: "
 const filterSelect: React.CSSProperties = { padding: "7px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "13px", background: "#fff" };
 const filterLabel: React.CSSProperties  = { display: "flex", gap: "6px", alignItems: "center", fontSize: "13px", cursor: "pointer", fontWeight: 500, color: "#374151" };
 const modalOverlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center" };
-const modalBox: React.CSSProperties     = { background: "#fff", borderRadius: "16px", padding: "28px 32px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)", maxHeight: "90vh", overflowY: "auto" };
+const modalBox: React.CSSProperties     = { background: "#fff", borderRadius: "16px", padding: "28px 32px", boxShadow: "0 20px 60px rgba(0,0,0,0.2)", maxHeight: "90vh", overflowY: "auto", maxWidth: "95vw", boxSizing: "border-box" };
 const lbl: React.CSSProperties          = { display: "block", fontSize: "11px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "5px" };
 const minp: React.CSSProperties         = { padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "14px", background: "#fff", color: "#111", width: "100%", boxSizing: "border-box" };
 const mSaveBtn: React.CSSProperties     = { padding: "9px 22px", background: "#1a4731", color: "#fff", border: "none", borderRadius: "9px", fontWeight: 700, fontSize: "14px", cursor: "pointer" };
