@@ -130,6 +130,7 @@ function BodegaContent() {
   const [movSearch, setMovSearch] = useState("");
   const [movDesde,  setMovDesde]  = useState("");
   const [movHasta,  setMovHasta]  = useState("");
+  const [historialProductoId, setHistorialProductoId] = useState<string | null>(null);
   const [otsPendientes, setOtsPendientes] = useState<OtPendiente[]>([]);
   const [otsDesviacion, setOtsDesviacion] = useState<OtDesviacion[]>([]);
   const [costosMap,     setCostosMap]     = useState<Map<string, number>>(new Map());
@@ -839,6 +840,83 @@ function BodegaContent() {
           </div>
         )}
 
+        {/* Modal historial de movimientos por producto */}
+        {historialProductoId && (() => {
+          const prodStock = stock.find(s => s.producto_id === historialProductoId);
+          const histMov = movimientos.filter(m => m.producto_id === historialProductoId);
+          return (
+            <div style={modalOverlay} onClick={() => setHistorialProductoId(null)}>
+              <div style={{ ...modalBox, width: "820px", maxWidth: "95vw" }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+                  <div>
+                    <h3 style={{ fontSize: "17px", fontWeight: 800, color: "#1a4731", marginBottom: "3px" }}>
+                      {prodStock?.producto.nombre_comercial ?? "Producto"}
+                    </h3>
+                    <p style={{ fontSize: "12px", color: "#6b7280" }}>
+                      {histMov.length} movimiento{histMov.length !== 1 ? "s" : ""} · Stock actual: {prodStock ? displayStock(Number(prodStock.cantidad_disponible), prodStock.producto.unidad_bodega) : "—"}
+                    </p>
+                  </div>
+                  <button onClick={() => setHistorialProductoId(null)} style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "#9ca3af", lineHeight: 1 }}>×</button>
+                </div>
+                {histMov.length === 0 ? (
+                  <p style={{ textAlign: "center", color: "#9ca3af", padding: "28px" }}>Sin movimientos registrados para este producto.</p>
+                ) : (
+                  <div style={{ overflowX: "auto", maxHeight: "60vh", overflowY: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                      <thead style={{ position: "sticky", top: 0 }}>
+                        <tr>
+                          {["Fecha", "Tipo", "Cantidad", "Stock final", ...(showPrecios ? ["Valor unit.", "Valor total"] : []), "Documento", "Proveedor / OT", "Notas"].map(h => (
+                            <th key={h} style={th}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {histMov.map(m => (
+                          <tr key={m.id}>
+                            <td style={{ ...td, whiteSpace: "nowrap" }}>{m.fecha}</td>
+                            <td style={td}>
+                              <span style={{ fontWeight: 700, color: tipoColor[m.tipo] || "#374151" }}>
+                                {tipoLabel[m.tipo] || m.tipo}
+                              </span>
+                            </td>
+                            <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>
+                              {m.tipo.includes("salida") ? "−" : "+"}{Number(m.cantidad).toFixed(3)} {m.unidad}
+                            </td>
+                            <td style={{ ...td, textAlign: "right", fontWeight: 600, color: (stockFinalMap.get(m.id) ?? 0) < 0 ? "#dc2626" : "#15803d" }}>
+                              {stockFinalMap.has(m.id) ? displayStock(stockFinalMap.get(m.id) ?? 0, prodStock?.producto.unidad_bodega ?? null) : "—"}
+                            </td>
+                            {showPrecios && (
+                              <td style={{ ...td, textAlign: "right", color: "#6b7280" }}>
+                                {(m.precio_unitario ?? m.costo_unitario) != null ? `$${Number(m.precio_unitario ?? m.costo_unitario).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
+                              </td>
+                            )}
+                            {showPrecios && (
+                              <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>
+                                {(m.precio_unitario ?? m.costo_unitario) != null ? `$${(Number(m.precio_unitario ?? m.costo_unitario) * Number(m.cantidad)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
+                              </td>
+                            )}
+                            <td style={td}>
+                              {m.documento_tipo ? `${m.documento_tipo === "guia_despacho" ? "Guía" : "Factura"} #${m.documento_numero || "—"}` : "—"}
+                            </td>
+                            <td style={td}>
+                              {m.proveedor || m.empresa_contraparte?.nombre
+                                ? (m.proveedor ?? m.empresa_contraparte?.nombre)
+                                : m.ot_id
+                                  ? <Link href={`/ordenes/${m.ot_id}`} style={{ color: "#1a4731", fontWeight: 700, textDecoration: "none" }}>OT #{m.ot?.numero ?? "?"}</Link>
+                                  : "—"}
+                            </td>
+                            <td style={{ ...td, color: "#6b7280" }}>{m.notas || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {loading ? (
           <p style={{ color: "#6b7280", marginTop: "20px" }}>Cargando...</p>
         ) : tab === "stock" ? (
@@ -875,7 +953,12 @@ function BodegaContent() {
                 {stockFiltrado.map((s) => {
                   const bajo = esBajoStock(s);
                   return (
-                    <tr key={s.producto_id}>
+                    <tr
+                      key={s.producto_id}
+                      onClick={() => setHistorialProductoId(s.producto_id)}
+                      style={{ cursor: "pointer" }}
+                      title="Ver historial de movimientos"
+                    >
                       <td style={{ ...td, fontWeight: 700 }}>{s.producto.nombre_comercial}</td>
                       <td style={td}>{s.producto.numero_registro || "—"}</td>
                       <td style={td}>{s.producto.ingrediente_activo || "—"}</td>
