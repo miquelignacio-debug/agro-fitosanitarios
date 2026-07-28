@@ -59,6 +59,7 @@ function EditarOTContent() {
 
   // ── Carga inicial: catálogos + datos existentes ────────────────────────────
   useEffect(() => {
+    if (!empresa) return;
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
@@ -80,9 +81,9 @@ function EditarOTContent() {
       const [
         { data: cua }, { data: mac }, { data: pers }, { data: plagas }, prod,
       ] = await Promise.all([
-        supabase.from("cuarteles").select("*").eq("activo", true).order("codigo"),
-        supabase.from("maquinaria").select("*").eq("activo", true).order("codigo"),
-        supabase.from("personal").select("*").eq("activo", true).order("nombre"),
+        supabase.from("cuarteles").select("*").eq("activo", true).eq("empresa_id", empresa).order("codigo"),
+        supabase.from("maquinaria").select("*").eq("activo", true).eq("empresa_id", empresa).order("codigo"),
+        supabase.from("personal").select("*").eq("activo", true).eq("empresa_id", empresa).order("nombre"),
         supabase.from("plagas_objetivos").select("*").eq("activo", true).order("tipo").order("nombre"),
         fetchAllProductos(),
       ]);
@@ -163,7 +164,8 @@ function EditarOTContent() {
       setLoading(false);
     };
     init();
-  }, [params.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.id, empresa]);
 
   // ── Stock disponible ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -177,7 +179,7 @@ function EditarOTContent() {
   }, [empresa]);
 
   // ── Computed ──────────────────────────────────────────────────────────────
-  const cuartelesPorEmpresa  = cuarteles.filter(c => c.empresa_id === empresa && (!campoId || c.campo_id === campoId));
+  const cuartelesPorEmpresa  = cuarteles.filter(c => !campoId || c.campo_id === campoId);
   const especiesDisponibles  = Array.from(new Set(cuartelesPorEmpresa.map(c => c.especie))).sort();
   const cuartelesFiltrados   = especieFilter ? cuartelesPorEmpresa.filter(c => c.especie === especieFilter) : cuartelesPorEmpresa;
   const personalSolicitante = personal.filter(p => p.cargo === "Solicitante");

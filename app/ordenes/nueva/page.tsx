@@ -65,6 +65,7 @@ function NuevaOTContent() {
 
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!empresa) return;
     const init = async () => {
       try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -87,9 +88,9 @@ function NuevaOTContent() {
       const [
         { data: cua }, { data: mac }, { data: pers }, { data: plagas }, prod,
       ] = await Promise.all([
-        supabase.from("cuarteles").select("*").eq("activo", true).order("codigo"),
-        supabase.from("maquinaria").select("*").eq("activo", true).order("codigo"),
-        supabase.from("personal").select("*").eq("activo", true).order("nombre"),
+        supabase.from("cuarteles").select("*").eq("activo", true).eq("empresa_id", empresa).order("codigo"),
+        supabase.from("maquinaria").select("*").eq("activo", true).eq("empresa_id", empresa).order("codigo"),
+        supabase.from("personal").select("*").eq("activo", true).eq("empresa_id", empresa).order("nombre"),
         supabase.from("plagas_objetivos").select("*").eq("activo", true).order("tipo").order("nombre"),
         fetchAllProductos(),
       ]);
@@ -108,7 +109,8 @@ function NuevaOTContent() {
       }
     };
     init();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresa]);
 
   // ── Stock disponible + comprometido en OTs activas ────────────────────────
   useEffect(() => {
@@ -176,7 +178,7 @@ function NuevaOTContent() {
   }, [empresa]);
 
   // ── Computed ───────────────────────────────────────────────────────────────
-  const cuartelesPorEmpresa  = cuarteles.filter(c => c.empresa_id === empresa && (!campoId || c.campo_id === campoId));
+  const cuartelesPorEmpresa  = cuarteles.filter(c => !campoId || c.campo_id === campoId);
   const [especieFilter, setEspecieFilter] = useState("");
   const especiesDisponibles = Array.from(new Set(cuartelesPorEmpresa.map(c => c.especie))).sort();
   const cuartelesFiltrados  = especieFilter
