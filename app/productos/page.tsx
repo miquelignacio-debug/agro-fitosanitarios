@@ -23,7 +23,7 @@ export default function ProductosPage() {
   const [savingPrecios, setSavingPrecios] = useState(false);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const load = useCallback(async (p: number, q: string, fuente: "todos" | "sag" | "manual") => {
     setLoading(true);
@@ -50,7 +50,7 @@ export default function ProductosPage() {
 
   const handleSearch = (val: string) => {
     setSearch(val);
-    clearTimeout(searchTimeout.current);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(() => {
       setPage(1);
       load(1, val, filtroFuente);
