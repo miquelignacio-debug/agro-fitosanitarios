@@ -23,7 +23,7 @@ export default function ProductosPage() {
   const [savingPrecios, setSavingPrecios] = useState(false);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async (p: number, q: string, fuente: "todos" | "sag" | "manual") => {
     setLoading(true);
