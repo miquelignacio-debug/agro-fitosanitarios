@@ -160,7 +160,7 @@ function DashboardContent() {
           if (!op.fecha_viable) continue;
           const fvMs = new Date(op.fecha_viable + "T12:00:00").getTime();
           const diasRest = Math.ceil((fvMs - hoyMs) / 86400000);
-          if (diasRest >= -3) {
+          if (diasRest > 0) {
             result.push({
               cuartel_codigo: oc.cuartel.codigo,
               especie: oc.cuartel.especie,
@@ -301,47 +301,6 @@ function DashboardContent() {
           <p style={{ color: "#6b7280", marginTop: "20px" }}>Cargando...</p>
         ) : (
           <>
-            {/* ── Panel carencias (ancho completo) ── */}
-            {carencias.length > 0 && (
-              <section style={{ ...panel, marginBottom: "20px" }}>
-                <div style={panelHeader}>
-                  <h2 style={panelTitle}>Carencias activas por cuartel</h2>
-                  <Link href="/cuaderno" style={linkMore}>Ver cuaderno →</Link>
-                </div>
-                <div style={carenciasGrid}>
-                  {carencias.map((c, i) => {
-                    const enCarencia = c.dias_restantes > 0;
-                    const urgente = c.dias_restantes > 0 && c.dias_restantes <= 7;
-                    const color = enCarencia ? (urgente ? "#d97706" : "#dc2626") : "#15803d";
-                    const bg = enCarencia ? (urgente ? "#fffbeb" : "#fef2f2") : "#f0fdf4";
-                    const border = enCarencia ? (urgente ? "#fde68a" : "#fca5a5") : "#bbf7d0";
-                    const icon = enCarencia ? (urgente ? "🟡" : "🔴") : "🟢";
-                    return (
-                      <div key={i} style={{ ...carenciaCard, background: bg, borderColor: border }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                          <span style={{ fontWeight: 800, fontSize: "15px", color: "#1a4731" }}>
-                            {icon} {c.cuartel_codigo}
-                          </span>
-                          <span style={{ fontSize: "11px", fontWeight: 700, color, background: `${color}18`, padding: "2px 8px", borderRadius: "999px" }}>
-                            {enCarencia ? `${c.dias_restantes}d restantes` : "Habilitado"}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#6b7280", marginTop: "4px" }}>
-                          {c.especie} {c.variedad}
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#374151", marginTop: "6px", fontWeight: 600 }}>
-                          {c.producto}
-                        </div>
-                        <div style={{ fontSize: "11px", color: "#9ca3af", marginTop: "2px" }}>
-                          Cosecha viable: {new Date(c.fecha_viable + "T12:00:00").toLocaleDateString("es-CL")}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
-
             {/* ── Programación 14 días (ancho completo) ── */}
             <section style={{ ...panel, marginBottom: "20px" }}>
               <div style={{ ...panelHeader, marginBottom: "4px" }}>
@@ -476,6 +435,54 @@ function DashboardContent() {
                 });
               })()}
             </section>
+
+            {/* ── Cuarteles con carencia activa ── */}
+            {carencias.length > 0 && (
+              <section style={{ ...panel, marginBottom: "20px" }}>
+                <div style={panelHeader}>
+                  <h2 style={panelTitle}>Cuarteles con carencia activa</h2>
+                  <Link href="/cuaderno" style={linkMore}>Ver cuaderno →</Link>
+                </div>
+                <div style={carenciasGrid}>
+                  {(() => {
+                    const byCuartel = new Map<string, CarenciaInfo[]>();
+                    for (const c of carencias) {
+                      const list = byCuartel.get(c.cuartel_codigo) ?? [];
+                      list.push(c);
+                      byCuartel.set(c.cuartel_codigo, list);
+                    }
+                    return Array.from(byCuartel.entries()).map(([cuartel, items]) => {
+                      const maxDias = Math.max(...items.map(i => i.dias_restantes));
+                      const urgente = maxDias <= 7;
+                      const color = urgente ? "#d97706" : "#dc2626";
+                      const bg = urgente ? "#fffbeb" : "#fef2f2";
+                      const border = urgente ? "#fde68a" : "#fca5a5";
+                      return (
+                        <div key={cuartel} style={{ ...carenciaCard, background: bg, borderColor: border }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                            <span style={{ fontWeight: 800, fontSize: "14px", color: "#1a4731" }}>🔴 {cuartel}</span>
+                            <span style={{ fontSize: "11px", fontWeight: 700, color, background: `${color}18`, padding: "2px 8px", borderRadius: "999px" }}>
+                              {maxDias}d restantes
+                            </span>
+                          </div>
+                          <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: "8px" }}>
+                            {items[0].especie} {items[0].variedad}
+                          </div>
+                          {[...items].sort((a, b) => b.dias_restantes - a.dias_restantes).map((item, idx) => (
+                            <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: "12px", marginTop: idx > 0 ? "5px" : "0", paddingTop: idx > 0 ? "5px" : "0", borderTop: idx > 0 ? "1px solid #f3f4f6" : "none" }}>
+                              <span style={{ color: "#374151", fontWeight: 600 }}>{item.producto}</span>
+                              <span style={{ color, fontWeight: 700, fontSize: "11px", whiteSpace: "nowrap", marginLeft: "8px" }}>
+                                hasta {new Date(item.fecha_viable + "T12:00:00").toLocaleDateString("es-CL", { day: "numeric", month: "short" })}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </section>
+            )}
 
             <div style={grid}>
               {/* Borradores pendientes de aprobación (admin y operador) */}
