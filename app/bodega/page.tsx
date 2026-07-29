@@ -122,7 +122,19 @@ function BodegaContent() {
   const [salidaVentaError,  setSalidaVentaError]  = useState("");
 
   // Editar movimiento
-  type EditMovForm = { id: string; docNumero: string; proveedor: string };
+  type EditMovForm = {
+    id: string;
+    productoNombre: string;
+    tipo: string;
+    unidad: string;
+    fecha: string;
+    cantidad: string;
+    precioUnitario: string;
+    docTipo: string;
+    docNumero: string;
+    proveedor: string;
+    notas: string;
+  };
   const [editMov,     setEditMov]     = useState<EditMovForm | null>(null);
   const [editSaving,  setEditSaving]  = useState(false);
   const [editError,   setEditError]   = useState("");
@@ -410,20 +422,41 @@ function BodegaContent() {
 
   const openEditMov = (m: StockMovimiento) => {
     setEditError("");
-    setEditMov({ id: m.id, docNumero: m.documento_numero || "", proveedor: m.proveedor || "" });
+    setEditMov({
+      id: m.id,
+      productoNombre: m.producto?.nombre_comercial || "",
+      tipo: m.tipo,
+      unidad: m.unidad,
+      fecha: m.fecha,
+      cantidad: String(m.cantidad),
+      precioUnitario: m.precio_unitario != null ? String(m.precio_unitario) : "",
+      docTipo: m.documento_tipo || "",
+      docNumero: m.documento_numero || "",
+      proveedor: m.proveedor || "",
+      notas: m.notas || "",
+    });
   };
 
   const handleEditMov = async () => {
     if (!editMov) return;
+    const cantNum = parseFloat(editMov.cantidad);
+    if (!cantNum || cantNum <= 0) { setEditError("La cantidad debe ser mayor a 0."); return; }
     setEditSaving(true);
     setEditError("");
     const { error } = await supabase
       .from("stock_movimientos")
-      .update({ documento_numero: editMov.docNumero.trim() || null, proveedor: editMov.proveedor.trim() || null })
+      .update({
+        fecha: editMov.fecha,
+        cantidad: cantNum,
+        precio_unitario: editMov.precioUnitario ? parseFloat(editMov.precioUnitario) : null,
+        documento_tipo: (editMov.docTipo as "guia_despacho" | "factura") || null,
+        documento_numero: editMov.docNumero.trim() || null,
+        proveedor: editMov.proveedor.trim() || null,
+        notas: editMov.notas.trim() || null,
+      })
       .eq("id", editMov.id);
     setEditSaving(false);
     if (error) { setEditError(error.message); return; }
-    // Guardar proveedor en catálogo si es nuevo
     if (editMov.proveedor.trim()) {
       await supabase.from("proveedores").upsert(
         { nombre: editMov.proveedor.trim(), activo: true },
@@ -799,19 +832,66 @@ function BodegaContent() {
         {/* Modal editar movimiento */}
         {editMov && (
           <div style={modalOverlay}>
-            <div style={{ ...modalBox, width: "420px" }}>
-              <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a4731", marginBottom: "16px" }}>
-                Corregir movimiento
+            <div style={{ ...modalBox, width: "500px" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a4731", marginBottom: "4px" }}>
+                Editar ingreso
               </h3>
+              <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px" }}>
+                {editMov.productoNombre} · {tipoLabel[editMov.tipo] || editMov.tipo}
+              </p>
               <div style={{ display: "grid", gap: "14px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div>
+                    <label style={lbl}>Fecha</label>
+                    <input
+                      type="date"
+                      value={editMov.fecha}
+                      onChange={e => setEditMov(f => f && ({ ...f, fecha: e.target.value }))}
+                      style={minp}
+                    />
+                  </div>
+                  <div>
+                    <label style={lbl}>Cantidad ({editMov.unidad})</label>
+                    <input
+                      type="number" min="0" step="any"
+                      value={editMov.cantidad}
+                      onChange={e => setEditMov(f => f && ({ ...f, cantidad: e.target.value }))}
+                      style={minp}
+                    />
+                  </div>
+                </div>
                 <div>
-                  <label style={lbl}>N° Documento (guía / factura)</label>
+                  <label style={lbl}>Precio unitario ($/unidad)</label>
                   <input
-                    value={editMov.docNumero}
-                    onChange={e => setEditMov(f => f && ({ ...f, docNumero: e.target.value }))}
+                    type="number" min="0" step="any"
+                    value={editMov.precioUnitario}
+                    onChange={e => setEditMov(f => f && ({ ...f, precioUnitario: e.target.value }))}
                     style={minp}
-                    placeholder="Ej. 975392"
+                    placeholder="Opcional"
                   />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div>
+                    <label style={lbl}>Tipo de documento</label>
+                    <select
+                      value={editMov.docTipo}
+                      onChange={e => setEditMov(f => f && ({ ...f, docTipo: e.target.value }))}
+                      style={minp}
+                    >
+                      <option value="">Sin documento</option>
+                      <option value="guia_despacho">Guía de despacho</option>
+                      <option value="factura">Factura</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lbl}>N° Documento</label>
+                    <input
+                      value={editMov.docNumero}
+                      onChange={e => setEditMov(f => f && ({ ...f, docNumero: e.target.value }))}
+                      style={minp}
+                      placeholder="Ej. 975392"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label style={lbl}>Proveedor</label>
@@ -826,6 +906,15 @@ function BodegaContent() {
                     {catalogProv.map(n => <option key={n} value={n} />)}
                   </datalist>
                 </div>
+                <div>
+                  <label style={lbl}>Notas</label>
+                  <input
+                    value={editMov.notas}
+                    onChange={e => setEditMov(f => f && ({ ...f, notas: e.target.value }))}
+                    style={minp}
+                    placeholder="Opcional"
+                  />
+                </div>
                 {editError && (
                   <p style={{ fontSize: "13px", color: "#dc2626", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "8px", padding: "10px 14px", margin: 0 }}>
                     {editError}
@@ -835,7 +924,7 @@ function BodegaContent() {
               <div style={{ display: "flex", gap: "10px", marginTop: "20px", justifyContent: "flex-end" }}>
                 <button onClick={() => setEditMov(null)} style={mCancelBtn}>Cancelar</button>
                 <button onClick={handleEditMov} disabled={editSaving} style={mSaveBtn}>
-                  {editSaving ? "Guardando..." : "Guardar corrección"}
+                  {editSaving ? "Guardando..." : "Guardar cambios"}
                 </button>
               </div>
             </div>
@@ -1139,7 +1228,7 @@ function BodegaContent() {
                       {(m.tipo === "entrada" || m.tipo === "ajuste_entrada" || m.tipo === "ajuste_salida") && isAdmin && (
                         <button
                           onClick={() => openEditMov(m)}
-                          title="Corregir documento / proveedor"
+                          title="Editar ingreso"
                           style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", padding: "2px 4px", color: "#6b7280" }}
                         >
                           ✏️
