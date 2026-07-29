@@ -179,7 +179,7 @@ function BodegaContent() {
 
     const baseCostos = supabase
       .from("stock_movimientos")
-      .select("producto_id, cantidad, precio_unitario")
+      .select("producto_id, cantidad, precio_unitario, notas")
       .eq("empresa_id", eid)
       .eq("tipo", "entrada")
       .not("precio_unitario", "is", null);
@@ -230,11 +230,15 @@ function BodegaContent() {
       a.producto.nombre_comercial.localeCompare(b.producto.nombre_comercial)
     );
 
-    // Weighted avg cost per product (empresa-level, for desviación valuation)
+    // Weighted avg cost per product in CLP (empresa-level, for desviación valuation)
+    // Inventario inicial entries store precio_unitario in USD → convert with factor 900
+    // Manual ingreso entries store precio_unitario already in CLP
+    const USD_CLP = 900;
     const costoAcc = new Map<string, { v: number; q: number }>();
-    for (const c of (costosData ?? []) as unknown as { producto_id: string; cantidad: number; precio_unitario: number }[]) {
+    for (const c of (costosData ?? []) as unknown as { producto_id: string; cantidad: number; precio_unitario: number; notas: string | null }[]) {
       const acc = costoAcc.get(c.producto_id) ?? { v: 0, q: 0 };
-      acc.v += Number(c.cantidad) * Number(c.precio_unitario);
+      const precioCLP = c.notas === "Inventario inicial" ? Number(c.precio_unitario) * USD_CLP : Number(c.precio_unitario);
+      acc.v += Number(c.cantidad) * precioCLP;
       acc.q += Number(c.cantidad);
       costoAcc.set(c.producto_id, acc);
     }
@@ -981,20 +985,18 @@ function BodegaContent() {
                         );
                       })()}
                       {(() => {
-                        const USD_CLP = 900;
-                        const costoUSD = costosMap.get(s.producto_id);
+                        const costoCLP = costosMap.get(s.producto_id);
                         return (
-                          <td style={{ ...td, textAlign: "right", color: costoUSD != null ? "#374151" : "#d1d5db" }}>
-                            {costoUSD != null
-                              ? `$${(costoUSD * USD_CLP).toLocaleString("es-CL", { maximumFractionDigits: 0 })}/${s.producto.unidad_bodega || "u"}`
+                          <td style={{ ...td, textAlign: "right", color: costoCLP != null ? "#374151" : "#d1d5db" }}>
+                            {costoCLP != null
+                              ? `$${costoCLP.toLocaleString("es-CL", { maximumFractionDigits: 0 })}/${s.producto.unidad_bodega || "u"}`
                               : "—"}
                           </td>
                         );
                       })()}
                       {(() => {
-                        const USD_CLP = 900;
-                        const costoUSD = costosMap.get(s.producto_id);
-                        const valor = costoUSD != null ? Number(s.cantidad_disponible) * costoUSD * USD_CLP : null;
+                        const costoCLP = costosMap.get(s.producto_id);
+                        const valor = costoCLP != null ? Number(s.cantidad_disponible) * costoCLP : null;
                         const fmtMM = (v: number) => `$${(v / 1_000_000).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MM`;
                         return (
                           <td style={{ ...td, textAlign: "right", color: valor != null ? "#1a4731" : "#d1d5db", fontWeight: valor != null ? 700 : 400 }}>
@@ -1019,10 +1021,9 @@ function BodegaContent() {
                 )}
               </tbody>
               {stockFiltrado.length > 0 && (() => {
-                const USD_CLP = 900;
                 const totalValor = stockFiltrado.reduce((sum, s) => {
-                  const costoUSD = costosMap.get(s.producto_id);
-                  return costoUSD != null ? sum + Number(s.cantidad_disponible) * costoUSD * USD_CLP : sum;
+                  const costoCLP = costosMap.get(s.producto_id);
+                  return costoCLP != null ? sum + Number(s.cantidad_disponible) * costoCLP : sum;
                 }, 0);
                 return totalValor > 0 ? (
                   <tfoot>
