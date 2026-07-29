@@ -104,6 +104,9 @@ function BodegaContent() {
   const [stock, setStock] = useState<StockRow[]>([]);
   const [movimientos, setMovimientos] = useState<StockMovimiento[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [mvHasMore, setMvHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [tab, setTab] = useState<"stock" | "movimientos" | "desviacion">("stock");
   const [stockSearch,  setStockSearch]  = useState("");
   const [stockFuncion, setStockFuncion] = useState("");
@@ -171,6 +174,8 @@ function BodegaContent() {
 
   const load = async (eid: string) => {
     setLoading(true);
+    setLoadError("");
+    try {
 
     // Aggregate campo-specific stock from ALL movimientos (not the empresa-level view)
     const baseAgg = supabase
@@ -272,10 +277,47 @@ function BodegaContent() {
 
     setStock(stockRows);
     setMovimientos(mvsConOt as StockMovimiento[]);
+    setMvHasMore((mv?.length ?? 0) >= 500);
     setOtsPendientes((otsPend ?? []) as unknown as OtPendiente[]);
     setOtsDesviacion((otsDes ?? []) as unknown as OtDesviacion[]);
     setCostosMap(newCostosMap);
-    setLoading(false);
+
+    } catch (e) {
+      console.error("Error cargando bodega:", e);
+      setLoadError("Error al cargar los datos. Intentá recargar la página.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMoreMov = async () => {
+    if (!empresaId || loadingMore) return;
+    setLoadingMore(true);
+    const from = movimientos.length;
+    const to   = from + 499;
+    const baseMv = supabase
+      .from("stock_movimientos")
+      .select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*)")
+      .eq("empresa_id", empresaId);
+    const { data: mv } = await (campoId ? baseMv.eq("campo_id", campoId) : baseMv)
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    if (mv && mv.length > 0) {
+      const rawMv = mv as StockMovimiento[];
+      const otIds = [...new Set(rawMv.filter(m => m.ot_id).map(m => m.ot_id!))];
+      let otMap: Record<string, number> = {};
+      if (otIds.length) {
+        const { data: ots } = await supabase.from("ordenes_trabajo").select("id, numero").in("id", otIds);
+        if (ots) otMap = Object.fromEntries(ots.map((o: { id: string; numero: number }) => [o.id, o.numero]));
+      }
+      const mvsConOt = rawMv.map(m => ({ ...m, ot: m.ot_id ? { id: m.ot_id, numero: otMap[m.ot_id] } : undefined }));
+      setMovimientos(prev => [...prev, ...mvsConOt as StockMovimiento[]]);
+      setMvHasMore(mv.length === 500);
+    } else {
+      setMvHasMore(false);
+    }
+    setLoadingMore(false);
   };
 
   const funcionesDisponibles = Array.from(
@@ -1008,6 +1050,12 @@ function BodegaContent() {
           );
         })()}
 
+        {loadError && (
+          <div style={{ marginTop: "20px", padding: "14px 18px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "10px", color: "#dc2626", fontSize: "14px" }}>
+            ⚠ {loadError}
+            <button onClick={() => { setLoadError(""); if (empresaId) load(empresaId); }} style={{ marginLeft: "12px", fontSize: "13px", color: "#dc2626", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Reintentar</button>
+          </div>
+        )}
         {loading ? (
           <p style={{ color: "#6b7280", marginTop: "20px" }}>Cargando...</p>
         ) : tab === "stock" ? (
@@ -1246,10 +1294,16 @@ function BodegaContent() {
                 )}
               </tbody>
             </table>
-            {movimientos.length >= 500 && (
-              <p style={{ fontSize: "12px", color: "#d97706", padding: "10px 14px", background: "#fffbeb", borderTop: "1px solid #fcd34d" }}>
-                ⚠ Mostrando los últimos 500 movimientos. El historial completo está disponible en la base de datos.
-              </p>
+            {mvHasMore && (
+              <div style={{ padding: "12px 14px", borderTop: "1px solid #e5e7eb", textAlign: "center" }}>
+                <button
+                  onClick={loadMoreMov}
+                  disabled={loadingMore}
+                  style={{ padding: "7px 20px", borderRadius: "8px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: loadingMore ? "default" : "pointer" }}
+                >
+                  {loadingMore ? "Cargando..." : `Cargar más (mostrando ${movimientos.length})`}
+                </button>
+              </div>
             )}
           </div>
           </>

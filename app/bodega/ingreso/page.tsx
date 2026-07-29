@@ -19,6 +19,7 @@ function IngresoContent() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [precioWarn, setPrecioWarn] = useState(false);
 
   // Form
   const [productoId, setProductoId] = useState("");
@@ -77,6 +78,11 @@ function IngresoContent() {
     if (!productoId) { setError("Seleccioná un producto."); return; }
     if (!cantidad || parseFloat(cantidad) <= 0) { setError("La cantidad debe ser mayor a 0."); return; }
     if (!docNumero.trim()) { setError(`El número de ${docTipo === "guia_despacho" ? "guía de despacho" : "factura"} es obligatorio.`); return; }
+
+    if (!precioUnitario.trim() && !precioWarn) {
+      setPrecioWarn(true);
+      return;
+    }
 
     setSaving(true);
     const { error: err } = await supabase.from("stock_movimientos").insert({
@@ -177,7 +183,7 @@ function IngresoContent() {
                 <input
                   type="number" min="0" step="0.01"
                   value={precioUnitario}
-                  onChange={(e) => setPrecioUnitario(e.target.value)}
+                  onChange={(e) => { setPrecioUnitario(e.target.value); if (precioWarn) setPrecioWarn(false); }}
                   style={inputStyle}
                   placeholder="Ej: 12500"
                 />
@@ -251,8 +257,21 @@ function IngresoContent() {
             />
           </section>
 
+          {precioWarn && (
+            <div style={warnStyle}>
+              ⚠ Sin precio unitario, el producto quedará sin valuación en bodega. Hacé clic en &quot;Registrar ingreso&quot; nuevamente para confirmar.
+            </div>
+          )}
           {error && <p style={errorStyle}>{error}</p>}
-          {saved && <p style={successStyle}>✓ Ingreso registrado correctamente</p>}
+          {saved && (
+            <div style={{ ...successStyle, display: "flex", alignItems: "center", gap: "10px", padding: "14px 20px" }}>
+              <span style={{ fontSize: "20px" }}>✓</span>
+              <div>
+                <div style={{ fontWeight: 700 }}>Ingreso registrado correctamente</div>
+                <div style={{ fontSize: "12px", opacity: 0.8 }}>Redirigiendo a bodega...</div>
+              </div>
+            </div>
+          )}
 
           <div style={footerRow}>
             <button onClick={() => router.push("/bodega")} style={cancelBtn}>
@@ -293,6 +312,7 @@ const prodRow: React.CSSProperties = { padding: "10px 14px", cursor: "pointer", 
 const prodRowActive: React.CSSProperties = { background: "#f0fdf4", borderLeft: "3px solid #1a4731" };
 const errorStyle: React.CSSProperties = { margin: "0 26px 12px", fontSize: "13px", color: "#dc2626", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "8px", padding: "10px 14px" };
 const successStyle: React.CSSProperties = { margin: "0 26px 12px", fontSize: "13px", color: "#15803d", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: "8px", padding: "10px 14px" };
+const warnStyle: React.CSSProperties = { margin: "0 26px 12px", fontSize: "13px", color: "#92400e", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "8px", padding: "10px 14px" };
 const footerRow: React.CSSProperties = { padding: "18px 26px", display: "flex", justifyContent: "flex-end", gap: "10px" };
 const cancelBtn: React.CSSProperties = { padding: "9px 20px", borderRadius: "8px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "14px", cursor: "pointer" };
 const saveBtn: React.CSSProperties = { padding: "9px 20px", borderRadius: "8px", background: "#1a4731", color: "#fff", fontWeight: 700, fontSize: "14px", border: "none", cursor: "pointer" };

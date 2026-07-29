@@ -27,6 +27,7 @@ function NuevaOTContent() {
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState("");
+  const [stockNegWarning, setStockNegWarning] = useState<string[]>([]);
 
   // Catálogos
   const [cuarteles,     setCuarteles]     = useState<Cuartel[]>([]);
@@ -348,6 +349,22 @@ function NuevaOTContent() {
     setError("");
     if (cuartelesOT.some(c => !c.cuartel_id)) { setError("Completa todos los cuarteles o elimina las filas vacías."); return; }
     if (productosOT.some(p => !p.producto_id || !p.dosis_real)) { setError("Cada producto necesita nombre y dosis."); return; }
+
+    if (estado === "emitida" && stockNegWarning.length === 0) {
+      const warns: string[] = [];
+      for (const p of productosOT.filter(r => r.producto_id && r.dosis_real)) {
+        const consumo = estimarConsumo(p);
+        if (consumo === null) continue;
+        const eff = getStockEfectivo(p.producto_id);
+        if (eff === null) continue;
+        if (consumo > eff.saldo) {
+          const nombre = productos.find(pr => pr.id === p.producto_id)?.nombre_comercial ?? p.producto_id;
+          warns.push(`${nombre}: necesitás ${consumo.toFixed(2)} ${eff.unidad}, disponible ${eff.saldo.toFixed(2)} ${eff.unidad}`);
+        }
+      }
+      if (warns.length > 0) { setStockNegWarning(warns); return; }
+    }
+    setStockNegWarning([]);
 
     setSaving(true);
 
@@ -771,6 +788,14 @@ function NuevaOTContent() {
           </section>
 
           {error && <p style={errorStyle}>{error}</p>}
+
+          {stockNegWarning.length > 0 && (
+            <div style={{ margin: "0 26px 12px", fontSize: "13px", color: "#92400e", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "8px", padding: "12px 14px" }}>
+              <div style={{ fontWeight: 700, marginBottom: "6px" }}>⚠ Stock insuficiente para algunos productos:</div>
+              {stockNegWarning.map((w, i) => <div key={i} style={{ marginBottom: "2px" }}>• {w}</div>)}
+              <div style={{ marginTop: "8px", fontSize: "12px", color: "#78350f" }}>Hacé clic en &quot;Emitir OT&quot; nuevamente para confirmar de todos modos.</div>
+            </div>
+          )}
 
           <div style={footerRow}>
             <button onClick={() => router.push("/ordenes")} style={cancelBtn} type="button">Cancelar</button>
