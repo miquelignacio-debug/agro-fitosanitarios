@@ -179,7 +179,7 @@ function BodegaContent() {
 
     const baseCostos = supabase
       .from("stock_movimientos")
-      .select("producto_id, cantidad, precio_unitario, notas")
+      .select("producto_id, cantidad, precio_unitario")
       .eq("empresa_id", eid)
       .eq("tipo", "entrada")
       .not("precio_unitario", "is", null);
@@ -231,14 +231,11 @@ function BodegaContent() {
     );
 
     // Weighted avg cost per product in CLP (empresa-level, for desviación valuation)
-    // Inventario inicial entries store precio_unitario in USD → convert with factor 900
-    // Manual ingreso entries store precio_unitario already in CLP
-    const USD_CLP = 900;
+    // All precio_unitario values are stored in CLP regardless of entry origin
     const costoAcc = new Map<string, { v: number; q: number }>();
-    for (const c of (costosData ?? []) as unknown as { producto_id: string; cantidad: number; precio_unitario: number; notas: string | null }[]) {
+    for (const c of (costosData ?? []) as unknown as { producto_id: string; cantidad: number; precio_unitario: number }[]) {
       const acc = costoAcc.get(c.producto_id) ?? { v: 0, q: 0 };
-      const precioCLP = c.notas === "Inventario inicial" ? Number(c.precio_unitario) * USD_CLP : Number(c.precio_unitario);
-      acc.v += Number(c.cantidad) * precioCLP;
+      acc.v += Number(c.cantidad) * Number(c.precio_unitario);
       acc.q += Number(c.cantidad);
       costoAcc.set(c.producto_id, acc);
     }
