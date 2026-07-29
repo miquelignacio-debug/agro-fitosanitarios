@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useEmpresa } from "@/lib/useEmpresa";
+import { useCampo } from "@/lib/useCampo";
 import type { Cuartel, Producto } from "@/lib/types";
 
 type CalcRow   = { cuartel_id: string; superficie_ha: string; mojamiento: string };
@@ -14,6 +15,7 @@ type AltResult = { producto: Producto; stock: number };
 function CalculadoraContent() {
   const router       = useRouter();
   const { empresaId } = useEmpresa();
+  const { campoId } = useCampo();
 
   const [cuarteles, setCuarteles] = useState<Cuartel[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -55,8 +57,10 @@ function CalculadoraContent() {
   useEffect(() => {
     let cancelled = false;
     if (!empresaId) return;
+    let cuaQuery = supabase.from("cuarteles").select("*").eq("empresa_id", empresaId).eq("activo", true).order("codigo");
+    if (campoId) cuaQuery = cuaQuery.eq("campo_id", campoId);
     Promise.all([
-      supabase.from("cuarteles").select("*").eq("empresa_id", empresaId).eq("activo", true).order("codigo"),
+      cuaQuery,
       supabase.from("stock_actual").select("producto_id, cantidad_disponible").eq("empresa_id", empresaId).gt("cantidad_disponible", 0),
     ]).then(([{ data: cuaData }, { data: stockData }]) => {
       if (cancelled) return;
@@ -68,7 +72,7 @@ function CalculadoraContent() {
       setStockMap(map);
     });
     return () => { cancelled = true; };
-  }, [empresaId]);
+  }, [empresaId, campoId]);
 
   // ── Especies únicas de los cuarteles cargados ─────────────────────────────
   const especiesUnicas = useMemo(() => {

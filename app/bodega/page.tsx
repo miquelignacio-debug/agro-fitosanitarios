@@ -888,12 +888,12 @@ function BodegaContent() {
                             </td>
                             {showPrecios && (
                               <td style={{ ...td, textAlign: "right", color: "#6b7280" }}>
-                                {(m.precio_unitario ?? m.costo_unitario) != null ? `$${Number(m.precio_unitario ?? m.costo_unitario).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
+                                {(m.precio_unitario ?? m.costo_unitario ?? costosMap.get(m.producto_id)) != null ? `$${Number(m.precio_unitario ?? m.costo_unitario ?? costosMap.get(m.producto_id)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
                               </td>
                             )}
                             {showPrecios && (
                               <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>
-                                {(m.precio_unitario ?? m.costo_unitario) != null ? `$${(Number(m.precio_unitario ?? m.costo_unitario) * Number(m.cantidad)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
+                                {(m.precio_unitario ?? m.costo_unitario ?? costosMap.get(m.producto_id)) != null ? `$${(Number(m.precio_unitario ?? m.costo_unitario ?? costosMap.get(m.producto_id)) * Number(m.cantidad)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
                               </td>
                             )}
                             <td style={td}>
@@ -945,8 +945,8 @@ function BodegaContent() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Producto", "N° Registro", "Ingrediente activo", "Función", "Stock disponible", "Stock proyectado", "Valor en bodega", "Alerta"].map((h) => (
-                    <th key={h} style={{ ...th, textAlign: h === "Valor en bodega" ? "right" : "left" }}>{h}</th>
+                  {["Producto", "N° Registro", "Ingrediente activo", "Función", "Stock disponible", "Stock proyectado", "Valor unitario", "Valor en bodega", "Alerta"].map((h) => (
+                    <th key={h} style={{ ...th, textAlign: (h === "Valor en bodega" || h === "Valor unitario") ? "right" : "left" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -983,6 +983,17 @@ function BodegaContent() {
                       {(() => {
                         const USD_CLP = 900;
                         const costoUSD = costosMap.get(s.producto_id);
+                        return (
+                          <td style={{ ...td, textAlign: "right", color: costoUSD != null ? "#374151" : "#d1d5db" }}>
+                            {costoUSD != null
+                              ? `$${(costoUSD * USD_CLP).toLocaleString("es-CL", { maximumFractionDigits: 0 })}/${s.producto.unidad_bodega || "u"}`
+                              : "—"}
+                          </td>
+                        );
+                      })()}
+                      {(() => {
+                        const USD_CLP = 900;
+                        const costoUSD = costosMap.get(s.producto_id);
                         const valor = costoUSD != null ? Number(s.cantidad_disponible) * costoUSD * USD_CLP : null;
                         const fmtMM = (v: number) => `$${(v / 1_000_000).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MM`;
                         return (
@@ -1001,7 +1012,7 @@ function BodegaContent() {
                 })}
                 {stock.length === 0 && (
                   <tr>
-                    <td colSpan={8} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
+                    <td colSpan={9} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
                       Sin movimientos de stock para esta empresa.
                     </td>
                   </tr>
@@ -1016,7 +1027,7 @@ function BodegaContent() {
                 return totalValor > 0 ? (
                   <tfoot>
                     <tr style={{ background: "#f0f4f2" }}>
-                      <td colSpan={6} style={{ ...td, fontWeight: 800, color: "#1a4731", textAlign: "right" }}>Total valor en bodega</td>
+                      <td colSpan={7} style={{ ...td, fontWeight: 800, color: "#1a4731", textAlign: "right" }}>Total valor en bodega</td>
                       <td style={{ ...td, textAlign: "right", fontWeight: 800, color: "#1a4731" }}>
                         {`$${(totalValor / 1_000_000).toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MM`}
                       </td>
@@ -1092,15 +1103,15 @@ function BodegaContent() {
                     </td>
                     {showPrecios && (
                       <td style={{ ...td, textAlign: "right", color: "#6b7280" }}>
-                        {(m.precio_unitario ?? m.costo_unitario) != null
-                          ? `$${Number(m.precio_unitario ?? m.costo_unitario).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
+                        {(m.precio_unitario ?? m.costo_unitario ?? costosMap.get(m.producto_id)) != null
+                          ? `$${Number(m.precio_unitario ?? m.costo_unitario ?? costosMap.get(m.producto_id)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
                           : "—"}
                       </td>
                     )}
                     {showPrecios && (
                       <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>
-                        {(m.precio_unitario ?? m.costo_unitario) != null
-                          ? `$${(Number(m.precio_unitario ?? m.costo_unitario) * Number(m.cantidad)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
+                        {(m.precio_unitario ?? m.costo_unitario ?? costosMap.get(m.producto_id)) != null
+                          ? `$${(Number(m.precio_unitario ?? m.costo_unitario ?? costosMap.get(m.producto_id)) * Number(m.cantidad)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
                           : "—"}
                       </td>
                     )}
