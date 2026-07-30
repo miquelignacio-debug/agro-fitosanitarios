@@ -29,9 +29,10 @@ function NuevaOTContent() {
   const [error,   setError]   = useState("");
   const [stockNegWarning, setStockNegWarning] = useState<string[]>([]);
   const [etapaPrefillWarn, setEtapaPrefillWarn] = useState<string[]>([]);
-  const [programaEtapaId,     setProgramaEtapaId]     = useState<string>("");
-  const [esAdicionalPrograma, setEsAdicionalPrograma] = useState(false);
-  const [programaEtapaInfo,   setProgramaEtapaInfo]   = useState<{ numero: number; etapaFenologica: string; programaNombre: string; programaId: string } | null>(null);
+  const [programaEtapaId,        setProgramaEtapaId]        = useState<string>("");
+  const [esAdicionalPrograma,    setEsAdicionalPrograma]    = useState(false);
+  const [programaEtapaInfo,      setProgramaEtapaInfo]      = useState<{ numero: number; etapaFenologica: string; programaNombre: string; programaId: string } | null>(null);
+  const [cuartelesYaAsignados,   setCuartelesYaAsignados]   = useState<Map<string, number>>(new Map());
   const searchParams = useSearchParams();
 
   // Catálogos
@@ -192,7 +193,7 @@ function NuevaOTContent() {
     const etapaId = searchParams.get("etapa_id");
     if (!etapaId) return;
     const prefill = async () => {
-      const [{ data: etapa }, { data: pcList }] = await Promise.all([
+      const [{ data: etapa }, { data: pcList }, { data: otsEtapa }] = await Promise.all([
         supabase
           .from("programa_etapas")
           .select("id, numero, etapa_fenologica, mojamiento_ltha, programa_id, programa_etapa_lineas(objetivo, producto_id, producto_nombre, dosis_valor, dosis_unidad, orden), programas_fitosanitarios(id, nombre)")
@@ -203,8 +204,24 @@ function NuevaOTContent() {
           .select("programas_fitosanitarios!inner(programa_cuarteles(cuartel_id))")
           .eq("id", etapaId)
           .single(),
+        supabase
+          .from("ordenes_trabajo")
+          .select("numero, ot_cuarteles(cuartel_id)")
+          .eq("programa_etapa_id", etapaId)
+          .neq("estado", "anulada"),
       ]);
       if (!etapa) return;
+
+      // Construir mapa de cuarteles ya cubiertos por otras OTs en esta etapa
+      type OTEtapaRow = { numero: number; ot_cuarteles: { cuartel_id: string }[] };
+      const asignadosMap = new Map<string, number>();
+      for (const ot of ((otsEtapa || []) as OTEtapaRow[])) {
+        for (const c of (ot.ot_cuarteles || [])) {
+          if (!asignadosMap.has(c.cuartel_id)) asignadosMap.set(c.cuartel_id, ot.numero);
+        }
+      }
+      setCuartelesYaAsignados(asignadosMap);
+
       setProgramaEtapaId(etapaId);
       type EtapaBasic = { numero: number; etapa_fenologica: string; programas_fitosanitarios: { id: string; nombre: string } | null };
       const ei = etapa as unknown as EtapaBasic;
@@ -665,42 +682,59 @@ function NuevaOTContent() {
                 ))}
               </div>
             )}
-            {cuartelesOT.map((row, i) => (
-              <div key={i} style={rowWrap}>
-                <div style={{ flex: 2 }}>
-                  <Field label={i === 0 ? "Cuartel" : ""}>
-                    <select value={row.cuartel_id} onChange={e => setCuartelRow(i, "cuartel_id", e.target.value)} style={inputStyle}>
-                      <option value="">— Seleccionar —</option>
-                      {cuartelesFiltrados.map(c => (
-                        <option key={c.id} value={c.id}>
-                          {c.codigo} — {c.especie} {c.variedad} ({c.superficie_real ?? "?"}ha)
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
+            {cuartelesOT.map((row, i) => {
+              const otDuplicada = row.cuartel_id ? cuartelesYaAsignados.get(row.cuartel_id) : undefined;
+              return (
+              <div key={i}>
+                <div style={rowWrap}>
+                  <div style={{ flex: 2 }}>
+                    <Field label={i === 0 ? "Cuartel" : ""}>
+                      <select
+                        value={row.cuartel_id}
+                        onChange={e => setCuartelRow(i, "cuartel_id", e.target.value)}
+                        style={{ ...inputStyle, borderColor: otDuplicada ? "#f59e0b" : undefined }}
+                      >
+                        <option value="">— Seleccionar —</option>
+                        {cuartelesFiltrados.map(c => {
+                          const yaOT = cuartelesYaAsignados.get(c.id);
+                          return (
+                            <option key={c.id} value={c.id}>
+                              {c.codigo} — {c.especie} {c.variedad} ({c.superficie_real ?? "?"}ha){yaOT ? ` ⚠ ya en OT #${yaOT}` : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </Field>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <Field label={i === 0 ? "Superficie (ha)" : ""}>
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={row.superficie_ha}
+                        onChange={e => handleCuartelSuperficie(i, e.target.value)}
+                        onFocus={() => {
+                          if (!row.superficie_ha && row.cuartel_id) {
+                            const c = cuarteles.find(c => c.id === row.cuartel_id);
+                            if (c?.superficie_real) handleCuartelSuperficie(i, String(c.superficie_real));
+                          }
+                        }}
+                        style={inputStyle}
+                        placeholder="Ha"
+                      />
+                    </Field>
+                  </div>
+                  {cuartelesOT.length > 1 && (
+                    <button onClick={() => removeCuartel(i)} style={removeBtn} type="button">✕</button>
+                  )}
                 </div>
-                <div style={{ flex: 1 }}>
-                  <Field label={i === 0 ? "Superficie (ha)" : ""}>
-                    <input
-                      type="number" min="0" step="0.01"
-                      value={row.superficie_ha}
-                      onChange={e => handleCuartelSuperficie(i, e.target.value)}
-                      onFocus={() => {
-                        if (!row.superficie_ha && row.cuartel_id) {
-                          const c = cuarteles.find(c => c.id === row.cuartel_id);
-                          if (c?.superficie_real) handleCuartelSuperficie(i, String(c.superficie_real));
-                        }
-                      }}
-                      style={inputStyle}
-                      placeholder="Ha"
-                    />
-                  </Field>
-                </div>
-                {cuartelesOT.length > 1 && (
-                  <button onClick={() => removeCuartel(i)} style={removeBtn} type="button">✕</button>
+                {otDuplicada && (
+                  <div style={{ marginTop: "-6px", marginBottom: "8px", fontSize: "12px", color: "#92400e", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "6px", padding: "5px 10px" }}>
+                    ⚠ Este cuartel ya está incluido en la OT #{otDuplicada} de esta misma etapa
+                  </div>
                 )}
               </div>
-            ))}
+              );
+            })}
             <button onClick={addCuartel} style={addBtn} type="button">+ Agregar cuartel</button>
           </section>
 
