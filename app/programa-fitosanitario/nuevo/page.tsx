@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useEmpresa } from "@/lib/useEmpresa";
@@ -28,7 +29,6 @@ type EtapaForm = {
 type CuartelOpt = {
   id: string;
   codigo: string;
-  nombre: string;
   especie: string;
   campo_nombre: string;
 };
@@ -40,12 +40,11 @@ const DOSIS_UNIDADES = ["cc/100lt", "lt/100lt", "g/100lt", "kg/100lt", "cc/ha", 
 function newLinea(): LineaForm {
   return { key: Date.now() + Math.random(), objetivo: "", productoId: "", productoNombre: "", dosisValor: "", dosisUnidad: "cc/100lt", destacado: false };
 }
-
 function newEtapa(): EtapaForm {
   return { key: Date.now() + Math.random(), etapaFenologica: "", mojamientoLtha: "", lineas: [newLinea()] };
 }
 
-// ── Subcomponente busqueda producto ─────────────────────────────────────────
+// ── Búsqueda de producto en catálogo ─────────────────────────────────────────
 function ProductoSearch({
   value, productoId, onChange,
 }: {
@@ -84,7 +83,7 @@ function ProductoSearch({
         value={value}
         onChange={(e) => handleChange(e.target.value)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        style={{ ...cellInput, paddingRight: productoId ? "60px" : undefined }}
+        style={{ ...cellInput, paddingRight: productoId ? "56px" : undefined }}
         placeholder="Nombre o buscar..."
       />
       {productoId && (
@@ -109,6 +108,86 @@ function ProductoSearch({
   );
 }
 
+// ── Parseo Excel ──────────────────────────────────────────────────────────────
+function parseExcelToEtapas(buffer: ArrayBuffer): EtapaForm[] {
+  const wb = xlsxRead(buffer, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = xlsxUtils.sheet_to_json<Record<string, string | number>>(ws, { defval: "" });
+
+  // Detectar columnas flexiblemente (case-insensitive, sin tildes)
+  const normalize = (s: string) =>
+    String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+
+  const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+  const col = (patterns: string[]) =>
+    headers.find((h) => patterns.some((p) => normalize(h).includes(p))) ?? "";
+
+  const colN       = col(["n°", "n ", "nro", "etapa", "numero"]);
+  const colEEFF    = col(["eeff", "fenol", "estado"]);
+  const colMoj     = col(["mojam", "volum", "agua", "ltha", "lt/ha"]);
+  const colObj     = col(["objetivo", "control", "target"]);
+  const colProd    = col(["producto", "product", "fitosanitario"]);
+  const colDosis   = col(["dosis", "dosis/hl", "cc/hl", "lt/hl", "g/hl"]);
+  const colUnidad  = col(["unidad", "unit"]);
+
+  const etapaMap = new Map<string, EtapaForm>();
+  let lastKey = "";
+
+  for (const row of rows) {
+    const nVal    = colN    ? String(row[colN] ?? "").trim()    : "";
+    const eeff    = colEEFF ? String(row[colEEFF] ?? "").trim() : "";
+    const moj     = colMoj  ? String(row[colMoj] ?? "").trim()  : "";
+    const obj     = colObj  ? String(row[colObj] ?? "").trim()  : "";
+    const prod    = colProd ? String(row[colProd] ?? "").trim() : "";
+    const dosis   = colDosis  ? String(row[colDosis] ?? "").trim()  : "";
+    const unidad  = colUnidad ? String(row[colUnidad] ?? "").trim() : "";
+
+    if (!prod && !eeff) continue; // fila vacía
+
+    const etapaKey = nVal || lastKey || eeff;
+    lastKey = etapaKey;
+
+    if (!etapaMap.has(etapaKey)) {
+      etapaMap.set(etapaKey, {
+        key: Date.now() + Math.random(),
+        etapaFenologica: eeff,
+        mojamientoLtha: moj,
+        lineas: [],
+      });
+    } else if (eeff && !etapaMap.get(etapaKey)!.etapaFenologica) {
+      etapaMap.get(etapaKey)!.etapaFenologica = eeff;
+    }
+
+    if (prod) {
+      // Inferir unidad de dosis
+      let dosisUnidad = "cc/100lt";
+      const u = normalize(unidad + dosis);
+      if (u.includes("lt/ha") || u.includes("l/ha"))       dosisUnidad = "lt/ha";
+      else if (u.includes("kg/ha"))                         dosisUnidad = "kg/ha";
+      else if (u.includes("g/ha"))                          dosisUnidad = "g/ha";
+      else if (u.includes("cc/ha") || u.includes("ml/ha")) dosisUnidad = "cc/ha";
+      else if (u.includes("lt/") || u.includes("l/"))       dosisUnidad = "lt/100lt";
+      else if (u.includes("kg/"))                           dosisUnidad = "kg/100lt";
+      else if (u.includes("g/"))                            dosisUnidad = "g/100lt";
+
+      // Extraer solo el número de la columna dosis
+      const dosisNum = dosis.replace(/[^0-9.,]/g, "").replace(",", ".");
+
+      etapaMap.get(etapaKey)!.lineas.push({
+        key: Date.now() + Math.random(),
+        objetivo: obj,
+        productoId: "",
+        productoNombre: prod,
+        dosisValor: dosisNum,
+        dosisUnidad,
+        destacado: false,
+      });
+    }
+  }
+
+  return Array.from(etapaMap.values()).filter((e) => e.etapaFenologica || e.lineas.length > 0);
+}
+
 // ── Página principal ─────────────────────────────────────────────────────────
 function NuevoProgramaContent() {
   const router = useRouter();
@@ -130,6 +209,9 @@ function NuevoProgramaContent() {
   // UI
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [xlsxWarn, setXlsxWarn] = useState("");
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Redirigir si no es superadmin
   useEffect(() => {
@@ -137,22 +219,22 @@ function NuevoProgramaContent() {
     if (!isSuperAdmin) { router.push("/dashboard"); }
   }, [rol, isSuperAdmin, router]);
 
-  // Cargar cuarteles
+  // Cargar cuarteles — sin campo "nombre" (no existe en la tabla)
   useEffect(() => {
     if (!empresaId) return;
     const load = async () => {
-      const { data } = await supabase
+      const { data, error: err } = await supabase
         .from("cuarteles")
-        .select("id, codigo, nombre, especie, campo:campos(nombre)")
+        .select("id, codigo, especie, campo:campos(nombre)")
         .eq("empresa_id", empresaId)
         .eq("activo", true)
         .order("codigo");
-      const rows = ((data as unknown as { id: string; codigo: string; nombre: string; especie: string; campo: { nombre: string } | null }[]) || []).map((r) => ({
+      if (err) { console.error("Error cuarteles:", err.message); return; }
+      const rows = ((data as unknown as { id: string; codigo: string; especie: string; campo: { nombre: string } | null }[]) || []).map((r) => ({
         id: r.id,
         codigo: r.codigo,
-        nombre: r.nombre,
-        especie: r.especie,
-        campo_nombre: r.campo?.nombre ?? "",
+        especie: r.especie ?? "",
+        campo_nombre: r.campo?.nombre ?? "Sin campo",
       }));
       setCuartelesDisp(rows);
     };
@@ -192,6 +274,31 @@ function NuevoProgramaContent() {
       return next;
     });
 
+  // ── Import Excel ────────────────────────────────────────────────────────────
+  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setXlsxWarn("");
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const buffer = ev.target?.result as ArrayBuffer;
+        const parsed = parseExcelToEtapas(buffer);
+        if (parsed.length === 0) {
+          setXlsxWarn("No se encontraron filas con datos. Verificá que la planilla tenga columnas: N°, EEFF, MOJAMIENTO, OBJETIVO, PRODUCTO, DOSIS/HL");
+          return;
+        }
+        setEtapas(parsed);
+        setXlsxWarn(`✓ ${parsed.length} etapa${parsed.length !== 1 ? "s" : ""} importadas. Revisá y ajustá los datos antes de guardar.`);
+      } catch {
+        setXlsxWarn("Error al leer la planilla. Asegurate de que sea un archivo .xlsx o .xls válido.");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
+
+  // ── Guardar ─────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     setError("");
     if (!empresaId) { setError("No hay empresa activa."); return; }
@@ -259,7 +366,7 @@ function NuevoProgramaContent() {
     router.push(`/programa-fitosanitario/${prog.id}`);
   };
 
-  if (isSuperAdmin === null) return null;
+  if (rol === null) return null;
 
   // Agrupar cuarteles por campo
   const cuartelesPorCampo: Record<string, CuartelOpt[]> = {};
@@ -325,8 +432,7 @@ function NuevoProgramaContent() {
                         cursor: "pointer",
                       }}
                     >
-                      {cuartelSel.has(c.id) ? "✓ " : ""}{c.codigo}
-                      {c.especie ? ` (${c.especie})` : ""}
+                      {cuartelSel.has(c.id) ? "✓ " : ""}{c.codigo}{c.especie ? ` (${c.especie})` : ""}
                     </button>
                   ))}
                 </div>
@@ -342,16 +448,46 @@ function NuevoProgramaContent() {
 
         {/* ── Sección 3: Etapas ── */}
         <div style={{ marginTop: "16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
             <h2 style={{ fontSize: "17px", fontWeight: 800, color: "#1a4731" }}>Etapas fenológicas</h2>
-            <button
-              type="button"
-              onClick={() => setEtapas((prev) => [...prev, newEtapa()])}
-              style={addBtn}
-            >
-              + Agregar etapa
-            </button>
+            <div style={{ display: "flex", gap: "8px" }}>
+              {/* Import Excel */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{ display: "none" }}
+                onChange={handleExcelImport}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                style={{ ...addBtn, background: "#fffbeb", borderColor: "#fcd34d", color: "#92400e" }}
+                title="Importar desde planilla Excel (.xlsx/.xls)"
+              >
+                📥 Importar Excel
+              </button>
+              <button
+                type="button"
+                onClick={() => setEtapas((prev) => [...prev, newEtapa()])}
+                style={addBtn}
+              >
+                + Agregar etapa
+              </button>
+            </div>
           </div>
+
+          {/* Aviso import */}
+          {xlsxWarn && (
+            <div style={{
+              padding: "10px 14px", borderRadius: "8px", fontSize: "13px", marginBottom: "12px",
+              background: xlsxWarn.startsWith("✓") ? "#f0fdf4" : "#fffbeb",
+              border: `1px solid ${xlsxWarn.startsWith("✓") ? "#86efac" : "#fcd34d"}`,
+              color: xlsxWarn.startsWith("✓") ? "#15803d" : "#92400e",
+            }}>
+              {xlsxWarn}
+            </div>
+          )}
 
           {etapas.map((etapa, etapaIdx) => (
             <div key={etapa.key} style={{ ...card, marginBottom: "16px", borderLeft: "4px solid #1a4731" }}>
@@ -418,7 +554,7 @@ function NuevoProgramaContent() {
                           <ProductoSearch
                             value={linea.productoNombre}
                             productoId={linea.productoId}
-                            onChange={(nombre, id) => updateLinea(etapa.key, linea.key, { productoNombre: nombre, productoId: id })}
+                            onChange={(nom, id) => updateLinea(etapa.key, linea.key, { productoNombre: nom, productoId: id })}
                           />
                         </td>
                         <td style={td}>
@@ -480,9 +616,7 @@ function NuevoProgramaContent() {
         </div>
 
         {/* Footer */}
-        {error && (
-          <div style={errorStyle}>{error}</div>
-        )}
+        {error && <div style={errorStyle}>{error}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px", paddingBottom: "40px" }}>
           <button onClick={() => router.back()} style={cancelBtn} disabled={saving}>Cancelar</button>
           <button onClick={handleSave} style={saveBtn} disabled={saving}>

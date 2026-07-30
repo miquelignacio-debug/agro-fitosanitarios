@@ -15,7 +15,7 @@ type Programa = {
   activo: boolean;
   created_at: string;
   programa_etapas: { id: string }[];
-  programa_cuarteles: { cuartel_id: string; cuartel: { codigo: string; especie: string } | null }[];
+  programa_cuarteles: { cuartel_id: string; cuartel: { codigo: string } | null }[];
 };
 
 function ProgramaListContent() {
@@ -31,7 +31,7 @@ function ProgramaListContent() {
     const load = async () => {
       const { data } = await supabase
         .from("programas_fitosanitarios")
-        .select("id, nombre, temporada, activo, created_at, programa_etapas(id), programa_cuarteles(cuartel_id, cuartel:cuarteles(codigo, especie))")
+        .select("id, nombre, temporada, activo, created_at, programa_etapas(id), programa_cuarteles(cuartel_id, cuartel:cuarteles(codigo))")
         .eq("empresa_id", empresaId)
         .order("created_at", { ascending: false });
       setProgramas((data as unknown as Programa[]) || []);

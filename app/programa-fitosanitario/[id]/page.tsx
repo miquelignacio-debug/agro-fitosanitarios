@@ -38,7 +38,7 @@ type Programa = {
   empresa_id: string;
   programa_cuarteles: {
     cuartel_id: string;
-    cuartel: { codigo: string; nombre: string; especie: string; campo: { nombre: string } | null } | null;
+    cuartel: { codigo: string; especie: string; campo: { nombre: string } | null } | null;
   }[];
   programa_etapas: Etapa[];
 };
@@ -67,7 +67,7 @@ function ProgramaDetalleContent() {
         .from("programas_fitosanitarios")
         .select(`
           id, nombre, temporada, activo, notas, empresa_id,
-          programa_cuarteles(cuartel_id, cuartel:cuarteles(codigo, nombre, especie, campo:campos(nombre))),
+          programa_cuarteles(cuartel_id, cuartel:cuarteles(codigo, especie, campo:campos(nombre))),
           programa_etapas(
             id, numero, etapa_fenologica, mojamiento_ltha, notas,
             programa_etapa_lineas(id, objetivo, producto_id, producto_nombre, dosis_valor, dosis_unidad, destacado, orden)
