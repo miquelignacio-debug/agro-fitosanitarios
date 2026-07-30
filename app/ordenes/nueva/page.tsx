@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useEmpresa } from "@/lib/useEmpresa";
@@ -28,6 +28,8 @@ function NuevaOTContent() {
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState("");
   const [stockNegWarning, setStockNegWarning] = useState<string[]>([]);
+  const [etapaPrefillWarn, setEtapaPrefillWarn] = useState<string[]>([]);
+  const searchParams = useSearchParams();
 
   // Catálogos
   const [cuarteles,     setCuarteles]     = useState<Cuartel[]>([]);
@@ -180,6 +182,57 @@ function NuevaOTContent() {
     });
     return () => { cancelled = true; };
   }, [empresa]);
+
+  // ── Pre-fill desde etapa de programa fitosanitario ───────────────────────
+  useEffect(() => {
+    if (loading) return;
+    const etapaId = searchParams.get("etapa_id");
+    if (!etapaId) return;
+    const prefill = async () => {
+      const [{ data: etapa }, { data: pcList }] = await Promise.all([
+        supabase
+          .from("programa_etapas")
+          .select("id, mojamiento_ltha, programa_id, programa_etapa_lineas(objetivo, producto_id, producto_nombre, dosis_valor, dosis_unidad, orden)")
+          .eq("id", etapaId)
+          .single(),
+        supabase
+          .from("programa_etapas")
+          .select("programas_fitosanitarios!inner(programa_cuarteles(cuartel_id))")
+          .eq("id", etapaId)
+          .single(),
+      ]);
+      if (!etapa) return;
+      if ((etapa as unknown as { mojamiento_ltha: number | null }).mojamiento_ltha) {
+        setMojamientoSol(String((etapa as unknown as { mojamiento_ltha: number }).mojamiento_ltha));
+      }
+      type LineaRaw = { objetivo: string | null; producto_id: string | null; producto_nombre: string; dosis_valor: number | null; dosis_unidad: string; orden: number };
+      const lineas: LineaRaw[] = [...((etapa as unknown as { programa_etapa_lineas: LineaRaw[] }).programa_etapa_lineas ?? [])].sort((a, b) => a.orden - b.orden);
+      const catalogLineas = lineas.filter(l => l.producto_id);
+      const sinCatalogo   = lineas.filter(l => !l.producto_id);
+      if (catalogLineas.length > 0) {
+        setProductosOT(catalogLineas.map(l => ({
+          producto_id: l.producto_id!,
+          dosis_real: l.dosis_valor != null ? String(l.dosis_valor) : "",
+          dosis_unidad: l.dosis_unidad,
+          carencia_dias: "", rei_horas: "", consumo_total: "",
+        })));
+      }
+      if (sinCatalogo.length > 0) {
+        setEtapaPrefillWarn(sinCatalogo.map(l => l.producto_nombre));
+      }
+      const cuartelIds: string[] = (pcList as unknown as { programas_fitosanitarios: { programa_cuarteles: { cuartel_id: string }[] } | null } | null)
+        ?.programas_fitosanitarios?.programa_cuarteles?.map(pc => pc.cuartel_id) ?? [];
+      const cuarRows: CuartelRow[] = cuartelIds
+        .map(cid => {
+          const info = cuarteles.find(c => c.id === cid);
+          return info ? { cuartel_id: cid, superficie_ha: String(info.superficie_real ?? "") } : null;
+        })
+        .filter((r): r is CuartelRow => r !== null);
+      if (cuarRows.length > 0) setCuartelesOT(cuarRows);
+    };
+    prefill();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, searchParams]);
 
   // ── Computed ───────────────────────────────────────────────────────────────
   const cuartelesPorEmpresa  = cuarteles.filter(c => !campoId || c.campo_id === campoId);
@@ -467,6 +520,15 @@ function NuevaOTContent() {
         </div>
 
         <div style={formCard}>
+          {/* Banner pre-carga desde etapa */}
+          {etapaPrefillWarn.length > 0 && (
+            <div style={{ padding: "12px 18px", background: "#fffbeb", borderBottom: "1px solid #fcd34d", borderLeft: "4px solid #f59e0b" }}>
+              <div style={{ fontWeight: 700, fontSize: "13px", color: "#92400e", marginBottom: "4px" }}>
+                ⚠ Pre-cargado desde programa fitosanitario — {etapaPrefillWarn.length} producto{etapaPrefillWarn.length !== 1 ? "s" : ""} no están en el catálogo y debés agregarlos manualmente:
+              </div>
+              {etapaPrefillWarn.map((n, i) => <div key={i} style={{ fontSize: "12px", color: "#78350f" }}>• {n}</div>)}
+            </div>
+          )}
           {/* ── Identificación ── */}
           <section style={section}>
             <h2 style={sectionTitle}>Identificación</h2>

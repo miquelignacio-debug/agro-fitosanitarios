@@ -74,7 +74,7 @@ function NavContent() {
   };
 
   const adminLinks = isSuperAdmin
-    ? [...NAV_LINKS, { href: "/admin", label: "Admin" }]
+    ? [...NAV_LINKS, { href: "/programa-fitosanitario", label: "Programa" }, { href: "/admin", label: "Admin" }]
     : NAV_LINKS;
 
   const initials = userNombre
