@@ -337,7 +337,7 @@ function OTDetalleContent() {
     const salidaCampo = consumos
       .filter(({ consumoCampo }) => consumoCampo > 0)
       .map(({ p, consumoCampo, unidadStock }) => ({
-        empresa_id: ot.empresa_id, producto_id: p.producto_id,
+        empresa_id: ot.empresa_id, campo_id: ot.campo_id, producto_id: p.producto_id,
         tipo: "salida" as const, cantidad: consumoCampo, unidad: unidadStock, fecha, ot_id: ot.id,
         precio_unitario: costoPromedio[p.producto_id] ?? null,
       }));
@@ -345,7 +345,7 @@ function OTDetalleContent() {
     const salidaBarbecho = consumos
       .filter(({ consumoBarbecho }) => consumoBarbecho > 0)
       .map(({ p, consumoBarbecho, unidadStock }) => ({
-        empresa_id: ot.empresa_id, producto_id: p.producto_id,
+        empresa_id: ot.empresa_id, campo_id: ot.campo_id, producto_id: p.producto_id,
         tipo: "salida_barbecho" as const, cantidad: consumoBarbecho, unidad: unidadStock, fecha, ot_id: ot.id,
         notas: `Remanente barbecho (${remanenteLt} lt agua)`,
         precio_unitario: costoPromedio[p.producto_id] ?? null,
