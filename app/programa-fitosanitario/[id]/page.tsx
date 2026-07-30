@@ -148,6 +148,9 @@ function ProgramaDetalleContent() {
               <p style={{ fontSize: "14px", color: "#6b7280", marginTop: "4px" }}>Temporada {programa.temporada}</p>
             </div>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <Link href={`/programa-fitosanitario/${programa.id}/editar`} style={{ ...secBtn, textDecoration: "none", display: "inline-block" }}>
+                ✏ Editar
+              </Link>
               <button onClick={handleToggleActivo} disabled={toggleSaving} style={secBtn}>
                 {toggleSaving ? "..." : programa.activo ? "Desactivar" : "Activar"}
               </button>

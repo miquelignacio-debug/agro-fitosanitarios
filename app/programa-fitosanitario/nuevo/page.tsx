@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
@@ -210,6 +211,7 @@ function NuevoProgramaContent() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [xlsxWarn, setXlsxWarn] = useState("");
+  const [sinCatalogoProd, setSinCatalogoProd] = useState<string[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -274,13 +276,40 @@ function NuevoProgramaContent() {
       return next;
     });
 
-  // ── Import Excel ────────────────────────────────────────────────────────────
+  // ── Import Excel + matching catálogo ────────────────────────────────────────
+  const matchProductos = async (parsed: EtapaForm[]): Promise<{ etapas: EtapaForm[]; sinCatalogo: string[] }> => {
+    const nombres = [...new Set(parsed.flatMap(e => e.lineas.map(l => l.productoNombre.trim())).filter(Boolean))];
+    if (nombres.length === 0) return { etapas: parsed, sinCatalogo: [] };
+
+    const results = await Promise.all(
+      nombres.map(n =>
+        supabase.from("productos").select("id, nombre_comercial").eq("activo", true).ilike("nombre_comercial", n).limit(1).maybeSingle()
+      )
+    );
+
+    const catalogMap = new Map<string, { id: string; nombre_comercial: string }>();
+    nombres.forEach((n, i) => { if (results[i].data) catalogMap.set(n.toLowerCase(), results[i].data!); });
+
+    const sinCatalogo: string[] = [];
+    const linked = parsed.map(e => ({
+      ...e,
+      lineas: e.lineas.map(l => {
+        const match = catalogMap.get(l.productoNombre.trim().toLowerCase());
+        if (match) return { ...l, productoId: match.id, productoNombre: match.nombre_comercial };
+        if (!sinCatalogo.includes(l.productoNombre)) sinCatalogo.push(l.productoNombre);
+        return l;
+      }),
+    }));
+    return { etapas: linked, sinCatalogo };
+  };
+
   const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setXlsxWarn("");
+    setSinCatalogoProd([]);
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const buffer = ev.target?.result as ArrayBuffer;
         const parsed = parseExcelToEtapas(buffer);
@@ -288,8 +317,12 @@ function NuevoProgramaContent() {
           setXlsxWarn("No se encontraron filas con datos. Verificá que la planilla tenga columnas: N°, EEFF, MOJAMIENTO, OBJETIVO, PRODUCTO, DOSIS/HL");
           return;
         }
-        setEtapas(parsed);
-        setXlsxWarn(`✓ ${parsed.length} etapa${parsed.length !== 1 ? "s" : ""} importadas. Revisá y ajustá los datos antes de guardar.`);
+        const { etapas: linked, sinCatalogo } = await matchProductos(parsed);
+        setEtapas(linked);
+        setSinCatalogoProd(sinCatalogo);
+        const matchedCount = linked.flatMap(e => e.lineas).filter(l => l.productoId).length;
+        const totalLineas  = linked.flatMap(e => e.lineas).length;
+        setXlsxWarn(`✓ ${parsed.length} etapa${parsed.length !== 1 ? "s" : ""} importadas · ${matchedCount}/${totalLineas} productos vinculados al catálogo.`);
       } catch {
         setXlsxWarn("Error al leer la planilla. Asegurate de que sea un archivo .xlsx o .xls válido.");
       }
@@ -614,6 +647,20 @@ function NuevoProgramaContent() {
             </div>
           ))}
         </div>
+
+        {/* Productos sin catálogo */}
+        {sinCatalogoProd.length > 0 && (
+          <div style={{ padding: "14px 16px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "10px", marginTop: "16px" }}>
+            <div style={{ fontWeight: 700, color: "#dc2626", fontSize: "13px", marginBottom: "6px" }}>
+              ⚠ {sinCatalogoProd.length} producto{sinCatalogoProd.length !== 1 ? "s" : ""} no encontrado{sinCatalogoProd.length !== 1 ? "s" : ""} en el catálogo:
+            </div>
+            {sinCatalogoProd.map((n, i) => <div key={i} style={{ fontSize: "12px", color: "#7f1d1d", marginBottom: "2px" }}>• {n}</div>)}
+            <div style={{ marginTop: "10px", fontSize: "12px", color: "#dc2626" }}>
+              <Link href="/productos" target="_blank" style={{ fontWeight: 700, color: "#dc2626" }}>Crear productos faltantes →</Link>
+              {" "}y volver a importar, o dejá los que faltan como texto libre (quedarán sin vincular al stock).
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         {error && <div style={errorStyle}>{error}</div>}
