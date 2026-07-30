@@ -55,7 +55,7 @@ function ProductoSearch({
 }) {
   const [results, setResults] = useState<ProdOpt[]>([]);
   const [open, setOpen] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleChange = (text: string) => {
     onChange(text, "");
