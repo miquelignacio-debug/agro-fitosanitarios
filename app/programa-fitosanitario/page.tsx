@@ -21,13 +21,13 @@ type Programa = {
 function ProgramaListContent() {
   const router = useRouter();
   const { empresaId } = useEmpresa();
-  const { isSuperAdmin } = useRol();
+  const { isSuperAdmin, rol } = useRol();
   const [programas, setProgramas] = useState<Programa[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!empresaId) return;
-    if (isSuperAdmin === false) { router.push("/dashboard"); return; }
+    if (!empresaId || rol === null) return;
+    if (!isSuperAdmin) { router.push("/dashboard"); return; }
     const load = async () => {
       const { data } = await supabase
         .from("programas_fitosanitarios")
@@ -40,7 +40,7 @@ function ProgramaListContent() {
     load();
   }, [empresaId, isSuperAdmin, router]);
 
-  if (isSuperAdmin === null) return null;
+  if (rol === null) return null;
 
   return (
     <>

@@ -113,7 +113,7 @@ function ProductoSearch({
 function NuevoProgramaContent() {
   const router = useRouter();
   const { empresaId } = useEmpresa();
-  const { isSuperAdmin } = useRol();
+  const { isSuperAdmin, rol } = useRol();
 
   // Header
   const [nombre, setNombre] = useState("");
@@ -133,8 +133,9 @@ function NuevoProgramaContent() {
 
   // Redirigir si no es superadmin
   useEffect(() => {
-    if (isSuperAdmin === false) { router.push("/dashboard"); }
-  }, [isSuperAdmin, router]);
+    if (rol === null) return;
+    if (!isSuperAdmin) { router.push("/dashboard"); }
+  }, [rol, isSuperAdmin, router]);
 
   // Cargar cuarteles
   useEffect(() => {

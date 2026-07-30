@@ -52,7 +52,7 @@ function ProgramaDetalleContent() {
   const params = useParams();
   const id = typeof params.id === "string" ? params.id : params.id?.[0] ?? "";
   const { empresaId } = useEmpresa();
-  const { isSuperAdmin } = useRol();
+  const { isSuperAdmin, rol } = useRol();
 
   const [programa, setPrograma] = useState<Programa | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,11 +60,8 @@ function ProgramaDetalleContent() {
   const [toggleSaving, setToggleSaving] = useState(false);
 
   useEffect(() => {
-    if (isSuperAdmin === false) { router.push("/dashboard"); return; }
-  }, [isSuperAdmin, router]);
-
-  useEffect(() => {
-    if (!id || !empresaId) return;
+    if (!id || !empresaId || rol === null) return;
+    if (!isSuperAdmin) { router.push("/dashboard"); return; }
     const load = async () => {
       const { data, error } = await supabase
         .from("programas_fitosanitarios")
@@ -91,7 +88,7 @@ function ProgramaDetalleContent() {
       setLoading(false);
     };
     load();
-  }, [id, empresaId, router]);
+  }, [id, empresaId, rol, isSuperAdmin, router]);
 
   const handleToggleActivo = async () => {
     if (!programa) return;
