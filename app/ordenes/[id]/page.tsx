@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
+import Link from "next/link";
 import { Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
@@ -40,6 +41,9 @@ type OTCompleta = OrdenTrabajo & {
   ot_cuarteles: { id: string; superficie_ha: number; cuartel: { codigo: string; especie: string; variedad: string; patron: string | null } }[];
   ot_aplicadores: { id: string; operador: { nombre: string } | null; personal: { nombre: string } | null; tractor: { codigo: string } | null; pulverizador: { codigo: string; capacidad_lt: number | null } | null; cantidad_maquinadas: number | null }[];
   ot_productos: OTProducto[];
+  programa_etapa_id: string | null;
+  es_adicional_programa: boolean;
+  programa_etapa: { numero: number; etapa_fenologica: string; programas_fitosanitarios: { id: string; nombre: string } | null } | null;
 };
 
 const PASOS_FLUJO: OrdenTrabajo["estado"][] = ["borrador", "emitida", "en_ejecucion", "finalizada"];
@@ -118,16 +122,17 @@ function OTDetalleContent() {
     setLoading(true);
     setPageError("");
 
+    const PROGRAMA_JOIN = "programa_etapa:programa_etapas(numero, etapa_fenologica, programas_fitosanitarios(id, nombre))";
     let result = await supabase
       .from("ordenes_trabajo")
-      .select(`*, empresa:empresas(nombre), solicitante:personal!solicitante_id(nombre), responsable:personal!responsable_id(nombre), dosificador:personal!dosificador_id(nombre), ot_cuarteles(id, superficie_ha, cuartel:cuarteles(codigo, especie, variedad, patron)), ot_aplicadores(${APLICADORES_SELECT_V10}), ot_productos(${PRODUCTOS_SELECT})`)
+      .select(`*, empresa:empresas(nombre), solicitante:personal!solicitante_id(nombre), responsable:personal!responsable_id(nombre), dosificador:personal!dosificador_id(nombre), ot_cuarteles(id, superficie_ha, cuartel:cuarteles(codigo, especie, variedad, patron)), ot_aplicadores(${APLICADORES_SELECT_V10}), ot_productos(${PRODUCTOS_SELECT}), ${PROGRAMA_JOIN}`)
       .eq("id", params.id)
       .single();
 
     if (result.error && (result.error.message?.includes("personal_id") || result.error.code === "PGRST200")) {
       result = await supabase
         .from("ordenes_trabajo")
-        .select(`*, empresa:empresas(nombre), solicitante:personal!solicitante_id(nombre), responsable:personal!responsable_id(nombre), dosificador:personal!dosificador_id(nombre), ot_cuarteles(id, superficie_ha, cuartel:cuarteles(codigo, especie, variedad, patron)), ot_aplicadores(${APLICADORES_SELECT_FALLBACK}), ot_productos(${PRODUCTOS_SELECT})`)
+        .select(`*, empresa:empresas(nombre), solicitante:personal!solicitante_id(nombre), responsable:personal!responsable_id(nombre), dosificador:personal!dosificador_id(nombre), ot_cuarteles(id, superficie_ha, cuartel:cuarteles(codigo, especie, variedad, patron)), ot_aplicadores(${APLICADORES_SELECT_FALLBACK}), ot_productos(${PRODUCTOS_SELECT}), ${PROGRAMA_JOIN}`)
         .eq("id", params.id)
         .single();
     }
@@ -525,6 +530,15 @@ function OTDetalleContent() {
                 <span style={{ fontSize: "13px", color: "#6b7280" }}>
                   Aplicación: {new Date(ot.fecha_aplicacion + "T12:00:00").toLocaleDateString("es-CL")}
                 </span>
+              )}
+              {ot.programa_etapa && ot.programa_etapa.programas_fitosanitarios && (
+                <Link
+                  href={`/programa-fitosanitario/${ot.programa_etapa.programas_fitosanitarios.id}`}
+                  style={{ fontSize: "12px", color: "#1d4ed8", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "6px", padding: "2px 10px", textDecoration: "none", fontWeight: 600 }}
+                >
+                  Etapa {ot.programa_etapa.numero} — {ot.programa_etapa.programas_fitosanitarios.nombre}
+                  {ot.es_adicional_programa && <span style={{ marginLeft: "6px", fontSize: "10px", background: "#ede9fe", color: "#7c3aed", borderRadius: "4px", padding: "1px 5px" }}>adicional</span>}
+                </Link>
               )}
             </div>
           </div>

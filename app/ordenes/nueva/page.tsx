@@ -29,6 +29,9 @@ function NuevaOTContent() {
   const [error,   setError]   = useState("");
   const [stockNegWarning, setStockNegWarning] = useState<string[]>([]);
   const [etapaPrefillWarn, setEtapaPrefillWarn] = useState<string[]>([]);
+  const [programaEtapaId,     setProgramaEtapaId]     = useState<string>("");
+  const [esAdicionalPrograma, setEsAdicionalPrograma] = useState(false);
+  const [programaEtapaInfo,   setProgramaEtapaInfo]   = useState<{ numero: number; etapaFenologica: string; programaNombre: string; programaId: string } | null>(null);
   const searchParams = useSearchParams();
 
   // Catálogos
@@ -192,7 +195,7 @@ function NuevaOTContent() {
       const [{ data: etapa }, { data: pcList }] = await Promise.all([
         supabase
           .from("programa_etapas")
-          .select("id, mojamiento_ltha, programa_id, programa_etapa_lineas(objetivo, producto_id, producto_nombre, dosis_valor, dosis_unidad, orden)")
+          .select("id, numero, etapa_fenologica, mojamiento_ltha, programa_id, programa_etapa_lineas(objetivo, producto_id, producto_nombre, dosis_valor, dosis_unidad, orden), programas_fitosanitarios(id, nombre)")
           .eq("id", etapaId)
           .single(),
         supabase
@@ -202,6 +205,12 @@ function NuevaOTContent() {
           .single(),
       ]);
       if (!etapa) return;
+      setProgramaEtapaId(etapaId);
+      type EtapaBasic = { numero: number; etapa_fenologica: string; programas_fitosanitarios: { id: string; nombre: string } | null };
+      const ei = etapa as unknown as EtapaBasic;
+      if (ei.numero && ei.etapa_fenologica) {
+        setProgramaEtapaInfo({ numero: ei.numero, etapaFenologica: ei.etapa_fenologica, programaNombre: ei.programas_fitosanitarios?.nombre ?? "", programaId: ei.programas_fitosanitarios?.id ?? "" });
+      }
       if ((etapa as unknown as { mojamiento_ltha: number | null }).mojamiento_ltha) {
         setMojamientoSol(String((etapa as unknown as { mojamiento_ltha: number }).mojamiento_ltha));
       }
@@ -445,6 +454,8 @@ function NuevaOTContent() {
       ppe_traje: ppe.traje, ppe_guantes: ppe.guantes, ppe_anteojos: ppe.anteojos,
       ppe_gorro: ppe.gorro, ppe_mascarilla: ppe.mascarilla, ppe_botas: ppe.botas,
       notas: notas.trim() || null,
+      programa_etapa_id: programaEtapaId || null,
+      es_adicional_programa: esAdicionalPrograma,
       estado,
     }).select("id").single();
 
@@ -520,6 +531,18 @@ function NuevaOTContent() {
         </div>
 
         <div style={formCard}>
+          {/* Banner: vinculada a etapa de programa fitosanitario */}
+          {programaEtapaInfo && (
+            <div style={{ padding: "12px 18px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", borderLeft: "4px solid #1a4731", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+              <div style={{ fontWeight: 700, fontSize: "13px", color: "#1a4731" }}>
+                Vinculada: {programaEtapaInfo.programaNombre} · Etapa {programaEtapaInfo.numero} — {programaEtapaInfo.etapaFenologica}
+              </div>
+              <label style={{ fontSize: "12px", color: "#374151", display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                <input type="checkbox" checked={esAdicionalPrograma} onChange={e => setEsAdicionalPrograma(e.target.checked)} />
+                Marcar como adicional al programa
+              </label>
+            </div>
+          )}
           {/* Banner pre-carga desde etapa */}
           {etapaPrefillWarn.length > 0 && (
             <div style={{ padding: "12px 18px", background: "#fffbeb", borderBottom: "1px solid #fcd34d", borderLeft: "4px solid #f59e0b" }}>

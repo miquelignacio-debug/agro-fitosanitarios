@@ -43,6 +43,42 @@ type Programa = {
   programa_etapas: Etapa[];
 };
 
+type OTPrograma = {
+  id: string;
+  numero: number;
+  estado: string;
+  fecha_aplicacion: string | null;
+  es_adicional_programa: boolean;
+  programa_etapa_id: string;
+  ot_cuarteles: { cuartel_id: string }[];
+  ot_productos: { producto_id: string | null; dosis_real: number | null; dosis_unidad: string }[];
+};
+
+function getCellState(
+  etapa: Etapa,
+  cuartelId: string,
+  ots: OTPrograma[],
+): { status: "applied" | "deviated" | "scheduled" | "none"; otNumero?: number; otId?: string } {
+  const relevant = ots.filter(
+    o => o.programa_etapa_id === etapa.id &&
+         !o.es_adicional_programa &&
+         o.estado !== "anulada" && o.estado !== "borrador" &&
+         o.ot_cuarteles.some(c => c.cuartel_id === cuartelId),
+  );
+  if (relevant.length === 0) return { status: "none" };
+
+  const finalizada = relevant.find(o => o.estado === "finalizada");
+  if (finalizada) {
+    const planIds = etapa.programa_etapa_lineas.filter(l => l.producto_id).map(l => l.producto_id!);
+    const otIds   = new Set(finalizada.ot_productos.map(p => p.producto_id).filter(Boolean));
+    const hasDeviation = planIds.some(pid => !otIds.has(pid));
+    return { status: hasDeviation ? "deviated" : "applied", otNumero: finalizada.numero, otId: finalizada.id };
+  }
+
+  const best = relevant[0];
+  return { status: "scheduled", otNumero: best.numero, otId: best.id };
+}
+
 function formatDosisUnidad(u: string) {
   return u.replace("/100lt", "/HL");
 }
@@ -55,6 +91,7 @@ function ProgramaDetalleContent() {
   const { isSuperAdmin, rol } = useRol();
 
   const [programa, setPrograma] = useState<Programa | null>(null);
+  const [otsData,  setOtsData]  = useState<OTPrograma[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState("");
   const [toggleSaving, setToggleSaving] = useState(false);
@@ -85,6 +122,15 @@ function ProgramaDetalleContent() {
           programa_etapa_lineas: [...e.programa_etapa_lineas].sort((a, b) => a.orden - b.orden),
         }));
       setPrograma(prog);
+      // Query OTs vinculadas a las etapas de este programa
+      const etapaIds = prog.programa_etapas.map(e => e.id);
+      if (etapaIds.length > 0) {
+        const { data: otsRaw } = await supabase
+          .from("ordenes_trabajo")
+          .select("id, numero, estado, fecha_aplicacion, es_adicional_programa, programa_etapa_id, ot_cuarteles(cuartel_id), ot_productos(producto_id, dosis_real, dosis_unidad)")
+          .in("programa_etapa_id", etapaIds);
+        setOtsData((otsRaw as unknown as OTPrograma[]) || []);
+      }
       setLoading(false);
     };
     load();
@@ -202,6 +248,96 @@ function ProgramaDetalleContent() {
               <div style={{ fontSize: "12px", color: "#6b7280", marginTop: "2px" }}>{label}</div>
             </div>
           ))}
+        </div>
+
+        {/* ── Dashboard de progreso ── */}
+        <div style={{ marginTop: "20px" }}>
+          <h2 style={{ fontSize: "17px", fontWeight: 800, color: "#1a4731", marginBottom: "14px" }}>Dashboard de progreso</h2>
+
+          {programa.programa_etapas.length === 0 || programa.programa_cuarteles.length === 0 ? (
+            <div style={{ ...card, color: "#6b7280", textAlign: "center", padding: "32px", fontSize: "14px" }}>
+              Cargá etapas y cuarteles para ver el progreso.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {programa.programa_etapas.map(etapa => {
+                const cuartelIds   = programa.programa_cuarteles.map(pc => pc.cuartel_id);
+                const adicionales  = otsData.filter(o => o.programa_etapa_id === etapa.id && o.es_adicional_programa);
+                const aplicados    = cuartelIds.filter(cid => { const s = getCellState(etapa, cid, otsData); return s.status === "applied" || s.status === "deviated"; });
+                const conDevio     = cuartelIds.filter(cid => getCellState(etapa, cid, otsData).status === "deviated");
+                const pct          = cuartelIds.length ? Math.round((aplicados.length / cuartelIds.length) * 100) : 0;
+
+                return (
+                  <div key={etapa.id} style={{ ...card, borderLeft: "4px solid #1a4731", padding: "16px 20px" }}>
+                    {/* Header etapa */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <div style={etapaNumBadge}>{etapa.numero}</div>
+                        <div>
+                          <div style={{ fontWeight: 700, color: "#1a4731", fontSize: "14px" }}>{etapa.etapa_fenologica}</div>
+                          <div style={{ fontSize: "12px", color: "#6b7280", marginTop: "1px" }}>
+                            {aplicados.length}/{cuartelIds.length} cuarteles aplicados
+                            {conDevio.length > 0 && ` · ${conDevio.length} con desvíos`}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "100px", height: "6px", background: "#e5e7eb", borderRadius: "3px", overflow: "hidden" }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: pct === 100 ? "#15803d" : "#1a4731", borderRadius: "3px", transition: "width 0.3s" }} />
+                        </div>
+                        <span style={{ fontSize: "12px", fontWeight: 700, color: "#1a4731", minWidth: "34px" }}>{pct}%</span>
+                      </div>
+                    </div>
+
+                    {/* Chips cuarteles */}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {programa.programa_cuarteles.map(pc => {
+                        const cell   = getCellState(etapa, pc.cuartel_id, otsData);
+                        const codigo = pc.cuartel?.codigo ?? "—";
+                        const base: React.CSSProperties = { padding: "4px 10px", borderRadius: "8px", fontSize: "12px", fontWeight: 700, textDecoration: "none", display: "inline-block", cursor: cell.otId ? "pointer" : "default" };
+                        const colors: React.CSSProperties =
+                          cell.status === "applied"   ? { background: "#dcfce7", color: "#15803d", border: "1px solid #86efac" } :
+                          cell.status === "deviated"  ? { background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d" } :
+                          cell.status === "scheduled" ? { background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" } :
+                                                        { background: "#f9fafb", color: "#9ca3af", border: "1px solid #e5e7eb" };
+                        const icon = cell.status === "applied" ? "✓" : cell.status === "deviated" ? "⚠" : cell.status === "scheduled" ? "⏳" : "·";
+                        const title = cell.status === "deviated" ? `OT #${cell.otNumero} — productos con desvíos` : cell.otId ? `OT #${cell.otNumero}` : "Sin OT";
+                        return cell.otId ? (
+                          <Link key={pc.cuartel_id} href={`/ordenes/${cell.otId}`} style={{ ...base, ...colors }} title={title}>
+                            {icon} {codigo}
+                          </Link>
+                        ) : (
+                          <span key={pc.cuartel_id} style={{ ...base, ...colors }}>{icon} {codigo}</span>
+                        );
+                      })}
+                    </div>
+
+                    {/* OTs adicionales */}
+                    {adicionales.length > 0 && (
+                      <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid #f3f4f6" }}>
+                        <span style={{ fontSize: "11px", color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.03em" }}>Adicionales:</span>
+                        <span style={{ display: "inline-flex", gap: "6px", marginLeft: "8px", flexWrap: "wrap" }}>
+                          {adicionales.map(o => (
+                            <Link key={o.id} href={`/ordenes/${o.id}`} style={{ fontSize: "12px", color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: "6px", padding: "2px 8px", textDecoration: "none" }}>
+                              OT #{o.numero}
+                            </Link>
+                          ))}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Leyenda */}
+          <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginTop: "10px", fontSize: "12px", color: "#6b7280" }}>
+            <span style={{ color: "#15803d", fontWeight: 600 }}>✓ Aplicado</span>
+            <span style={{ color: "#92400e", fontWeight: 600 }}>⚠ Con desvíos</span>
+            <span style={{ color: "#1d4ed8", fontWeight: 600 }}>⏳ Emitida / en proceso</span>
+            <span>· Sin OT</span>
+          </div>
         </div>
 
         {/* ── Etapas ── */}
