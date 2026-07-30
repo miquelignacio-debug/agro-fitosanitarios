@@ -45,6 +45,44 @@ function newEtapa(): EtapaForm {
   return { key: Date.now() + Math.random(), etapaFenologica: "", mojamientoLtha: "", lineas: [newLinea()] };
 }
 
+// ── Vincular producto sin catálogo a uno existente ───────────────────────────
+function VincularSearch({ onSelect }: { onSelect: (id: string, nombre: string) => void }) {
+  const [query,   setQuery]   = useState("");
+  const [results, setResults] = useState<ProdOpt[]>([]);
+  const [open,    setOpen]    = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleChange = (text: string) => {
+    setQuery(text);
+    if (timer.current) clearTimeout(timer.current);
+    if (text.length >= 2) {
+      timer.current = setTimeout(async () => {
+        const { data } = await supabase.from("productos").select("id, nombre_comercial").eq("activo", true).ilike("nombre_comercial", `%${text}%`).order("nombre_comercial").limit(10);
+        setResults((data as ProdOpt[]) || []);
+        setOpen(true);
+      }, 300);
+    } else { setResults([]); setOpen(false); }
+  };
+
+  return (
+    <div style={{ position: "relative", flex: 1, minWidth: "180px" }}>
+      <input value={query} onChange={e => handleChange(e.target.value)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+        style={{ padding: "5px 10px", borderRadius: "6px", border: "1.5px solid #d1d5db", fontSize: "12px", width: "100%", boxSizing: "border-box" }}
+        placeholder="Buscar en catálogo..." />
+      {open && results.length > 0 && (
+        <div style={{ position: "absolute", top: "calc(100% + 2px)", left: 0, right: 0, background: "#fff", border: "1px solid #d1d5db", borderRadius: "8px", zIndex: 200, maxHeight: "200px", overflowY: "auto", boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }}>
+          {results.map(r => (
+            <div key={r.id} onMouseDown={() => { onSelect(r.id, r.nombre_comercial); setQuery(""); setOpen(false); }}
+              style={{ padding: "8px 12px", cursor: "pointer", fontSize: "13px", borderBottom: "1px solid #f3f4f6" }}>
+              {r.nombre_comercial}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Búsqueda de producto en catálogo ─────────────────────────────────────────
 function ProductoSearch({
   value, productoId, onChange,
@@ -267,6 +305,18 @@ function NuevoProgramaContent() {
         e.key !== etapaKey ? e : { ...e, lineas: e.lineas.filter((l) => l.key !== lineaKey) }
       )
     );
+
+  const handleVincular = (excelNombre: string, catalogId: string, catalogNombre: string) => {
+    setEtapas(prev => prev.map(e => ({
+      ...e,
+      lineas: e.lineas.map(l =>
+        (l.productoNombre === excelNombre && !l.productoId)
+          ? { ...l, productoId: catalogId, productoNombre: catalogNombre }
+          : l
+      ),
+    })));
+    setSinCatalogoProd(prev => prev.filter(n => n !== excelNombre));
+  };
 
   const toggleCuartel = (id: string) =>
     setCuartelSel((prev) => {
@@ -648,16 +698,23 @@ function NuevoProgramaContent() {
           ))}
         </div>
 
-        {/* Productos sin catálogo */}
+        {/* Productos sin catálogo — vincular inline */}
         {sinCatalogoProd.length > 0 && (
           <div style={{ padding: "14px 16px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "10px", marginTop: "16px" }}>
-            <div style={{ fontWeight: 700, color: "#dc2626", fontSize: "13px", marginBottom: "6px" }}>
-              ⚠ {sinCatalogoProd.length} producto{sinCatalogoProd.length !== 1 ? "s" : ""} no encontrado{sinCatalogoProd.length !== 1 ? "s" : ""} en el catálogo:
+            <div style={{ fontWeight: 700, color: "#dc2626", fontSize: "13px", marginBottom: "10px" }}>
+              ⚠ {sinCatalogoProd.length} producto{sinCatalogoProd.length !== 1 ? "s" : ""} sin vincular al catálogo. Buscá el equivalente o creá los faltantes:
             </div>
-            {sinCatalogoProd.map((n, i) => <div key={i} style={{ fontSize: "12px", color: "#7f1d1d", marginBottom: "2px" }}>• {n}</div>)}
-            <div style={{ marginTop: "10px", fontSize: "12px", color: "#dc2626" }}>
-              <Link href="/productos" target="_blank" style={{ fontWeight: 700, color: "#dc2626" }}>Crear productos faltantes →</Link>
-              {" "}y volver a importar, o dejá los que faltan como texto libre (quedarán sin vincular al stock).
+            {sinCatalogoProd.map(nombre => (
+              <div key={nombre} style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "12px", color: "#7f1d1d", fontWeight: 600, minWidth: "160px" }}>• {nombre}</span>
+                <span style={{ fontSize: "12px", color: "#9ca3af" }}>→</span>
+                <VincularSearch onSelect={(id, nom) => handleVincular(nombre, id, nom)} />
+              </div>
+            ))}
+            <div style={{ marginTop: "10px", fontSize: "12px", color: "#dc2626", borderTop: "1px solid #fca5a5", paddingTop: "10px" }}>
+              ¿No existe en el catálogo?{" "}
+              <Link href="/productos" target="_blank" style={{ fontWeight: 700, color: "#dc2626" }}>Creá el producto →</Link>
+              {" "}y volvé a importar, o guardá como texto libre (sin vincular al stock).
             </div>
           </div>
         )}
