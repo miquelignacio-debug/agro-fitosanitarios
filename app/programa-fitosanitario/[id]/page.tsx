@@ -95,9 +95,10 @@ function ProgramaDetalleContent() {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState("");
   const [toggleSaving,  setToggleSaving]  = useState(false);
-  const [vincularEtapa, setVincularEtapa] = useState<Etapa | null>(null);
-  const [otsBusqueda,   setOtsBusqueda]   = useState<{ id: string; numero: number; fecha_aplicacion: string | null; estado: string }[]>([]);
-  const [otFiltro,      setOtFiltro]      = useState("");
+  const [vincularEtapa,  setVincularEtapa]  = useState<Etapa | null>(null);
+  const [otsBusqueda,    setOtsBusqueda]    = useState<{ id: string; numero: number; fecha_aplicacion: string | null; estado: string }[]>([]);
+  const [otsVinculadas,  setOtsVinculadas]  = useState<{ id: string; numero: number; fecha_aplicacion: string | null; estado: string }[]>([]);
+  const [otFiltro,       setOtFiltro]       = useState("");
   const [vincularSaving, setVincularSaving] = useState(false);
 
   useEffect(() => {
@@ -170,14 +171,12 @@ function ProgramaDetalleContent() {
     if (!programa) return;
     setVincularEtapa(etapa);
     setOtFiltro("");
-    const { data } = await supabase
-      .from("ordenes_trabajo")
-      .select("id, numero, fecha_aplicacion, estado")
-      .eq("empresa_id", programa.empresa_id)
-      .is("programa_etapa_id", null)
-      .order("numero", { ascending: false })
-      .limit(200);
-    setOtsBusqueda((data as unknown as typeof otsBusqueda) || []);
+    const [{ data: libres }, { data: vinculadas }] = await Promise.all([
+      supabase.from("ordenes_trabajo").select("id, numero, fecha_aplicacion, estado").eq("empresa_id", programa.empresa_id).is("programa_etapa_id", null).order("numero", { ascending: false }).limit(200),
+      supabase.from("ordenes_trabajo").select("id, numero, fecha_aplicacion, estado").eq("programa_etapa_id", etapa.id).order("numero", { ascending: false }),
+    ]);
+    setOtsBusqueda((libres as unknown as typeof otsBusqueda) || []);
+    setOtsVinculadas((vinculadas as unknown as typeof otsVinculadas) || []);
   };
 
   const handleVincularOT = async (otId: string) => {
@@ -185,7 +184,26 @@ function ProgramaDetalleContent() {
     setVincularSaving(true);
     await supabase.from("ordenes_trabajo").update({ programa_etapa_id: vincularEtapa.id }).eq("id", otId);
     await refreshOts(programa);
-    setVincularEtapa(null);
+    // Mover OT del panel libre al panel vinculado
+    const ot = otsBusqueda.find(o => o.id === otId);
+    if (ot) {
+      setOtsBusqueda(prev => prev.filter(o => o.id !== otId));
+      setOtsVinculadas(prev => [ot, ...prev]);
+    }
+    setVincularSaving(false);
+  };
+
+  const handleDesvincularOT = async (otId: string) => {
+    if (!programa) return;
+    setVincularSaving(true);
+    await supabase.from("ordenes_trabajo").update({ programa_etapa_id: null }).eq("id", otId);
+    await refreshOts(programa);
+    // Mover OT del panel vinculado al panel libre
+    const ot = otsVinculadas.find(o => o.id === otId);
+    if (ot) {
+      setOtsVinculadas(prev => prev.filter(o => o.id !== otId));
+      setOtsBusqueda(prev => [ot, ...prev]);
+    }
     setVincularSaving(false);
   };
 
@@ -474,49 +492,86 @@ function ProgramaDetalleContent() {
             🖨 Imprimir programa
           </button>
         </div>
-        {/* ── Modal: Vincular OT existente ── */}
+        {/* ── Modal: Vincular / Desvincular OTs ── */}
         {vincularEtapa && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
-            <div style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "90%", maxWidth: "500px", boxShadow: "0 8px 32px rgba(0,0,0,0.2)", maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
-              <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a4731", marginBottom: "4px" }}>
-                Vincular OT a Etapa {vincularEtapa.numero}
-              </h3>
-              <p style={{ fontSize: "13px", color: "#6b7280", marginBottom: "16px" }}>
-                {vincularEtapa.etapa_fenologica}
-              </p>
-              <input
-                value={otFiltro}
-                onChange={e => setOtFiltro(e.target.value)}
-                placeholder="Filtrar por número de OT..."
-                style={{ padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "14px", marginBottom: "12px", width: "100%", boxSizing: "border-box" }}
-              />
-              <div style={{ overflowY: "auto", flex: 1, border: "1px solid #e5e7eb", borderRadius: "10px" }}>
-                {otsBusqueda.length === 0 ? (
-                  <p style={{ padding: "20px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>Sin OTs sin vincular</p>
-                ) : (
-                  otsBusqueda
-                    .filter(o => !otFiltro || String(o.numero).includes(otFiltro))
-                    .map(o => (
-                      <button
-                        key={o.id}
-                        onClick={() => handleVincularOT(o.id)}
-                        disabled={vincularSaving}
-                        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", padding: "12px 16px", background: "none", border: "none", borderBottom: "1px solid #f3f4f6", cursor: "pointer", textAlign: "left", gap: "10px" }}
-                      >
-                        <span style={{ fontWeight: 700, fontSize: "14px", color: "#1a4731" }}>OT #{o.numero}</span>
-                        <span style={{ fontSize: "12px", color: "#6b7280" }}>
+            <div style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "90%", maxWidth: "520px", boxShadow: "0 8px 32px rgba(0,0,0,0.2)", maxHeight: "85vh", display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div>
+                <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a4731", marginBottom: "2px" }}>
+                  Etapa {vincularEtapa.numero} — {vincularEtapa.etapa_fenologica}
+                </h3>
+                <p style={{ fontSize: "12px", color: "#6b7280" }}>Hacé clic en una OT para vincularla o desvincularla.</p>
+              </div>
+
+              {/* OTs ya vinculadas a esta etapa */}
+              {otsVinculadas.length > 0 && (
+                <div>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "6px" }}>
+                    Vinculadas a esta etapa
+                  </div>
+                  <div style={{ border: "1px solid #bbf7d0", borderRadius: "10px", overflow: "hidden" }}>
+                    {otsVinculadas.map(o => (
+                      <div key={o.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid #f0fdf4", gap: "10px" }}>
+                        <span style={{ fontWeight: 700, fontSize: "14px", color: "#15803d" }}>OT #{o.numero}</span>
+                        <span style={{ fontSize: "12px", color: "#6b7280", flex: 1 }}>
                           {o.fecha_aplicacion ? new Date(o.fecha_aplicacion + "T12:00:00").toLocaleDateString("es-CL") : "Sin fecha"}
                         </span>
-                        <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "999px", background: o.estado === "finalizada" ? "#dcfce7" : "#f3f4f6", color: o.estado === "finalizada" ? "#15803d" : "#6b7280" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "999px", background: "#dcfce7", color: "#15803d" }}>
                           {o.estado}
                         </span>
-                      </button>
-                    ))
-                )}
+                        <button
+                          onClick={() => handleDesvincularOT(o.id)}
+                          disabled={vincularSaving}
+                          style={{ fontSize: "12px", color: "#dc2626", background: "transparent", border: "1px solid #fca5a5", borderRadius: "6px", padding: "3px 10px", cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}
+                        >
+                          Desvincular
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* OTs libres para vincular */}
+              <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "6px" }}>
+                  Agregar OT a esta etapa
+                </div>
+                <input
+                  value={otFiltro}
+                  onChange={e => setOtFiltro(e.target.value)}
+                  placeholder="Filtrar por número..."
+                  style={{ padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "14px", marginBottom: "8px", width: "100%", boxSizing: "border-box" }}
+                />
+                <div style={{ overflowY: "auto", flex: 1, border: "1px solid #e5e7eb", borderRadius: "10px" }}>
+                  {otsBusqueda.filter(o => !otFiltro || String(o.numero).includes(otFiltro)).length === 0 ? (
+                    <p style={{ padding: "20px", textAlign: "center", color: "#9ca3af", fontSize: "13px" }}>Sin OTs sin vincular</p>
+                  ) : (
+                    otsBusqueda
+                      .filter(o => !otFiltro || String(o.numero).includes(otFiltro))
+                      .map(o => (
+                        <button
+                          key={o.id}
+                          onClick={() => handleVincularOT(o.id)}
+                          disabled={vincularSaving}
+                          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid #f3f4f6", cursor: "pointer", textAlign: "left", gap: "10px" }}
+                        >
+                          <span style={{ fontWeight: 700, fontSize: "14px", color: "#1a4731" }}>OT #{o.numero}</span>
+                          <span style={{ fontSize: "12px", color: "#6b7280", flex: 1 }}>
+                            {o.fecha_aplicacion ? new Date(o.fecha_aplicacion + "T12:00:00").toLocaleDateString("es-CL") : "Sin fecha"}
+                          </span>
+                          <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "999px", background: o.estado === "finalizada" ? "#dcfce7" : "#f3f4f6", color: o.estado === "finalizada" ? "#15803d" : "#6b7280" }}>
+                            {o.estado}
+                          </span>
+                        </button>
+                      ))
+                  )}
+                </div>
               </div>
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "16px" }}>
+
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button onClick={() => setVincularEtapa(null)} style={{ padding: "8px 20px", borderRadius: "8px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}>
-                  Cancelar
+                  Cerrar
                 </button>
               </div>
             </div>
