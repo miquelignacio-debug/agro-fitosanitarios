@@ -94,9 +94,10 @@ function OTDetalleContent() {
   const [pageError, setPageError] = useState("");
   const [transError, setTransError] = useState("");
   const [transitioning, setTransitioning] = useState(false);
-  const [confirmAnular,   setConfirmAnular]   = useState(false);
-  const [confirmEliminar, setConfirmEliminar] = useState(false);
-  const [avisoApicola,    setAvisoApicola]    = useState(false);
+  const [confirmAnular,    setConfirmAnular]    = useState(false);
+  const [confirmEliminar,  setConfirmEliminar]  = useState(false);
+  const [avisoApicola,     setAvisoApicola]     = useState(false);
+  const [stockNegWarning,  setStockNegWarning]  = useState<string[]>([]);
   const [notas, setNotas] = useState("");
 
   // Datos de ejecución (para finalizar)
@@ -163,6 +164,50 @@ function OTDetalleContent() {
       if (necesitaAviso) { setAvisoApicola(true); return; }
     }
     setAvisoApicola(false);
+
+    // Stock check before emitting
+    if (nuevoEstado === "emitida" && stockNegWarning.length === 0 && ot) {
+      const supTotal = ot.ot_cuarteles.reduce((s, c) => s + c.superficie_ha, 0);
+      const mojSol   = ot.mojamiento_solicitado_ltha ?? 0;
+      const prodIds  = [...new Set(ot.ot_productos.map(p => p.producto_id))];
+      if (prodIds.length > 0) {
+        const { data: stockData } = await supabase
+          .from("stock_movimientos")
+          .select("producto_id, tipo, cantidad")
+          .eq("empresa_id", ot.empresa_id)
+          .in("producto_id", prodIds);
+        const SUMAS = new Set(["entrada", "transferencia_entrada", "ajuste_entrada"]);
+        const stockMap = new Map<string, number>();
+        for (const m of (stockData ?? []) as { producto_id: string; tipo: string; cantidad: number }[]) {
+          const sign = SUMAS.has(m.tipo) ? 1 : -1;
+          stockMap.set(m.producto_id, (stockMap.get(m.producto_id) ?? 0) + sign * Number(m.cantidad));
+        }
+        const warns: string[] = [];
+        for (const p of ot.ot_productos) {
+          const dosis = Number(p.dosis_real);
+          const u = p.dosis_unidad.toLowerCase().replace(/\s+/g, "");
+          let consumo = 0;
+          if (u.includes("/100")) {
+            if (!mojSol) continue;
+            const raw = dosis * mojSol * supTotal / 100;
+            const pfx = u.split("/")[0];
+            consumo = (pfx === "cc" || pfx === "ml" || pfx === "g") ? raw / 1000 : raw;
+          } else if (u.includes("/ha")) {
+            const raw = dosis * supTotal;
+            const pfx = u.split("/")[0];
+            consumo = (pfx === "cc" || pfx === "ml" || pfx === "g") ? raw / 1000 : raw;
+          }
+          if (consumo <= 0) continue;
+          const saldo = stockMap.get(p.producto_id) ?? 0;
+          if (consumo > saldo) {
+            warns.push(`${p.producto?.nombre_comercial ?? "Producto"}: necesitás ${consumo.toFixed(2)}, disponible ${saldo.toFixed(2)}`);
+          }
+        }
+        if (warns.length > 0) { setStockNegWarning(warns); return; }
+      }
+    }
+    setStockNegWarning([]);
+
     setTransError("");
     setTransitioning(true);
     const { error } = await supabase.from("ordenes_trabajo")
@@ -635,6 +680,14 @@ function OTDetalleContent() {
             </div>
           );
         })()}
+
+        {stockNegWarning.length > 0 && (
+          <div style={{ padding: "12px 14px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: "8px", fontSize: "13px", color: "#92400e", marginBottom: "12px" }}>
+            <div style={{ fontWeight: 700, marginBottom: "6px" }}>⚠ Stock insuficiente para algunos productos:</div>
+            {stockNegWarning.map((w, i) => <div key={i} style={{ marginBottom: "2px" }}>• {w}</div>)}
+            <div style={{ marginTop: "8px", fontSize: "12px", color: "#78350f" }}>Hacé clic en &quot;Emitir&quot; nuevamente para confirmar de todos modos.</div>
+          </div>
+        )}
 
         {transError && (
           <div style={{ padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "8px", fontSize: "13px", color: "#dc2626", marginBottom: "12px" }}>

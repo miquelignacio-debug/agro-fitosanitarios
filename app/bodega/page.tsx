@@ -299,10 +299,15 @@ function BodegaContent() {
       .from("stock_movimientos")
       .select("*, producto:productos(*), empresa_contraparte:empresas!stock_movimientos_empresa_contraparte_id_fkey(*)")
       .eq("empresa_id", empresaId);
-    const { data: mv } = await (campoId ? baseMv.eq("campo_id", campoId) : baseMv)
+    const { data: mv, error: mvErr } = await (campoId ? baseMv.eq("campo_id", campoId) : baseMv)
       .order("fecha", { ascending: false })
       .order("created_at", { ascending: false })
       .range(from, to);
+    if (mvErr) {
+      // keep mvHasMore=true so the user can retry
+      setLoadingMore(false);
+      return;
+    }
     if (mv && mv.length > 0) {
       const rawMv = mv as StockMovimiento[];
       const otIds = [...new Set(rawMv.filter(m => m.ot_id).map(m => m.ot_id!))];

@@ -64,6 +64,9 @@ function NuevaOTContent() {
   // PPE
   const [ppe, setPpe] = useState({ traje: false, guantes: false, anteojos: false, gorro: false, mascarilla: false, botas: false });
 
+  // Limpiar aviso de stock si el usuario cambia productos, cuarteles o mojamiento
+  useEffect(() => { setStockNegWarning([]); }, [productosOT, cuartelesOT, mojamientoSol]);
+
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!empresa) return;

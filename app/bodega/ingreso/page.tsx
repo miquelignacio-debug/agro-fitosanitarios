@@ -119,6 +119,7 @@ function IngresoContent() {
   const productoSel = productos.find((p) => p.id === productoId);
   // Cuando cambia el producto, actualizar unidad al unidad_bodega definida
   const handleProductoChange = (id: string) => {
+    setPrecioWarn(false);
     setProductoId(id);
     const prod = productos.find(p => p.id === id);
     if (prod?.unidad_bodega) setUnidad(prod.unidad_bodega);
