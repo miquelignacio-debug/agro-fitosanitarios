@@ -94,7 +94,11 @@ function ProgramaDetalleContent() {
   const [otsData,  setOtsData]  = useState<OTPrograma[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState("");
-  const [toggleSaving, setToggleSaving] = useState(false);
+  const [toggleSaving,  setToggleSaving]  = useState(false);
+  const [vincularEtapa, setVincularEtapa] = useState<Etapa | null>(null);
+  const [otsBusqueda,   setOtsBusqueda]   = useState<{ id: string; numero: number; fecha_aplicacion: string | null; estado: string }[]>([]);
+  const [otFiltro,      setOtFiltro]      = useState("");
+  const [vincularSaving, setVincularSaving] = useState(false);
 
   useEffect(() => {
     if (!id || !empresaId || rol === null) return;
@@ -150,6 +154,39 @@ function ProgramaDetalleContent() {
     setDeletingId(programa.id);
     await supabase.from("programas_fitosanitarios").delete().eq("id", programa.id);
     router.push("/programa-fitosanitario");
+  };
+
+  const refreshOts = async (prog: Programa) => {
+    const ids = prog.programa_etapas.map(e => e.id);
+    if (!ids.length) return;
+    const { data } = await supabase
+      .from("ordenes_trabajo")
+      .select("id, numero, estado, fecha_aplicacion, es_adicional_programa, programa_etapa_id, ot_cuarteles(cuartel_id), ot_productos(producto_id, dosis_real, dosis_unidad)")
+      .in("programa_etapa_id", ids);
+    setOtsData((data as unknown as OTPrograma[]) || []);
+  };
+
+  const abrirVincular = async (etapa: Etapa) => {
+    if (!programa) return;
+    setVincularEtapa(etapa);
+    setOtFiltro("");
+    const { data } = await supabase
+      .from("ordenes_trabajo")
+      .select("id, numero, fecha_aplicacion, estado")
+      .eq("empresa_id", programa.empresa_id)
+      .is("programa_etapa_id", null)
+      .order("numero", { ascending: false })
+      .limit(200);
+    setOtsBusqueda((data as unknown as typeof otsBusqueda) || []);
+  };
+
+  const handleVincularOT = async (otId: string) => {
+    if (!vincularEtapa || !programa) return;
+    setVincularSaving(true);
+    await supabase.from("ordenes_trabajo").update({ programa_etapa_id: vincularEtapa.id }).eq("id", otId);
+    await refreshOts(programa);
+    setVincularEtapa(null);
+    setVincularSaving(false);
   };
 
   if (isSuperAdmin === null || loading) {
@@ -325,6 +362,11 @@ function ProgramaDetalleContent() {
                         </span>
                       </div>
                     )}
+                    <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid #f3f4f6" }}>
+                      <button onClick={() => abrirVincular(etapa)} style={{ fontSize: "12px", color: "#1a4731", background: "transparent", border: "1.5px dashed #1a4731", borderRadius: "7px", padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}>
+                        + Vincular OT existente
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -432,6 +474,54 @@ function ProgramaDetalleContent() {
             🖨 Imprimir programa
           </button>
         </div>
+        {/* ── Modal: Vincular OT existente ── */}
+        {vincularEtapa && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
+            <div style={{ background: "#fff", borderRadius: "16px", padding: "28px", width: "90%", maxWidth: "500px", boxShadow: "0 8px 32px rgba(0,0,0,0.2)", maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a4731", marginBottom: "4px" }}>
+                Vincular OT a Etapa {vincularEtapa.numero}
+              </h3>
+              <p style={{ fontSize: "13px", color: "#6b7280", marginBottom: "16px" }}>
+                {vincularEtapa.etapa_fenologica}
+              </p>
+              <input
+                value={otFiltro}
+                onChange={e => setOtFiltro(e.target.value)}
+                placeholder="Filtrar por número de OT..."
+                style={{ padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #d1d5db", fontSize: "14px", marginBottom: "12px", width: "100%", boxSizing: "border-box" }}
+              />
+              <div style={{ overflowY: "auto", flex: 1, border: "1px solid #e5e7eb", borderRadius: "10px" }}>
+                {otsBusqueda.length === 0 ? (
+                  <p style={{ padding: "20px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>Sin OTs sin vincular</p>
+                ) : (
+                  otsBusqueda
+                    .filter(o => !otFiltro || String(o.numero).includes(otFiltro))
+                    .map(o => (
+                      <button
+                        key={o.id}
+                        onClick={() => handleVincularOT(o.id)}
+                        disabled={vincularSaving}
+                        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", padding: "12px 16px", background: "none", border: "none", borderBottom: "1px solid #f3f4f6", cursor: "pointer", textAlign: "left", gap: "10px" }}
+                      >
+                        <span style={{ fontWeight: 700, fontSize: "14px", color: "#1a4731" }}>OT #{o.numero}</span>
+                        <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                          {o.fecha_aplicacion ? new Date(o.fecha_aplicacion + "T12:00:00").toLocaleDateString("es-CL") : "Sin fecha"}
+                        </span>
+                        <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "999px", background: o.estado === "finalizada" ? "#dcfce7" : "#f3f4f6", color: o.estado === "finalizada" ? "#15803d" : "#6b7280" }}>
+                          {o.estado}
+                        </span>
+                      </button>
+                    ))
+                )}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "16px" }}>
+                <button onClick={() => setVincularEtapa(null)} style={{ padding: "8px 20px", borderRadius: "8px", border: "1.5px solid #d1d5db", background: "#fff", color: "#374151", fontWeight: 600, fontSize: "13px", cursor: "pointer" }}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </>
   );
