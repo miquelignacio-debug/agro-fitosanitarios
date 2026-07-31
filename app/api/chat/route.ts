@@ -154,12 +154,15 @@ REGLAS:
       systemInstruction,
     });
 
-    const geminiHistory = (history ?? [])
+    const rawHistory = (history ?? [])
       .slice(-12)
       .map(msg => ({
         role: msg.role === "assistant" ? "model" : ("user" as "user" | "model"),
         parts: [{ text: msg.content }],
       }));
+    // Gemini requires history to start with 'user' — strip any leading model messages
+    const firstUserIdx = rawHistory.findIndex(m => m.role === "user");
+    const geminiHistory = firstUserIdx >= 0 ? rawHistory.slice(firstUserIdx) : [];
 
     const chat = model.startChat({
       history: geminiHistory,
