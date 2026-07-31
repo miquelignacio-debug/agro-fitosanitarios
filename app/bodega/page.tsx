@@ -984,7 +984,7 @@ function BodegaContent() {
           const histMov = movimientos.filter(m => m.producto_id === historialProductoId);
           return (
             <div style={modalOverlay} onClick={() => setHistorialProductoId(null)}>
-              <div style={{ ...modalBox, width: "820px", maxWidth: "95vw" }} onClick={e => e.stopPropagation()}>
+              <div style={{ ...modalBox, width: "820px", maxWidth: "95vw", padding: "20px" }} onClick={e => e.stopPropagation()}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
                   <div>
                     <h3 style={{ fontSize: "17px", fontWeight: 800, color: "#1a4731", marginBottom: "3px" }}>
@@ -1282,7 +1282,7 @@ function BodegaContent() {
                         <button
                           onClick={() => openEditMov(m)}
                           title="Editar ingreso"
-                          style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", padding: "2px 4px", color: "#6b7280" }}
+                          style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", padding: "6px 8px", color: "#6b7280", lineHeight: 1 }}
                         >
                           ✏️
                         </button>

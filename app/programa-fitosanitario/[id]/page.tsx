@@ -292,7 +292,7 @@ function ProgramaDetalleContent() {
         </div>
 
         {/* ── Resumen estadístico ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", margin: "16px 0" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "12px", margin: "16px 0" }}>
           {[
             { label: "Etapas", value: programa.programa_etapas.length },
             { label: "Cuarteles", value: programa.programa_cuarteles.length },
@@ -509,7 +509,7 @@ function ProgramaDetalleContent() {
                   <div style={{ fontSize: "11px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "6px" }}>
                     Vinculadas a esta etapa
                   </div>
-                  <div style={{ border: "1px solid #bbf7d0", borderRadius: "10px", overflow: "hidden" }}>
+                  <div style={{ border: "1px solid #bbf7d0", borderRadius: "10px", overflow: "hidden", maxHeight: "220px", overflowY: "auto" }}>
                     {otsVinculadas.map(o => (
                       <div key={o.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid #f0fdf4", gap: "10px" }}>
                         <span style={{ fontWeight: 700, fontSize: "14px", color: "#15803d" }}>OT #{o.numero}</span>
