@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useEmpresa } from "@/lib/useEmpresa";
+import { useCampo } from "@/lib/useCampo";
 import { generateSAGPdf } from "@/lib/generateSAGPdf";
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
@@ -142,6 +143,7 @@ function flattenOTs(ots: OTRaw[]): Fila[] {
 
 function CuadernoContent() {
   const { empresaId } = useEmpresa();
+  const { campoId, campoNombre } = useCampo();
 
   const [filas, setFilas] = useState<Fila[]>([]);
   const [loading, setLoading] = useState(true);
@@ -158,7 +160,7 @@ function CuadernoContent() {
   useEffect(() => {
     if (!empresaId) { setLoading(false); return; }
     load(desde, hasta);
-  }, [empresaId, desde, hasta]);
+  }, [empresaId, campoId, desde, hasta]);
 
   const BASE_SELECT = `
     id, numero, estado, fecha_aplicacion, mojamiento_real_ltha, viento_kmh, temperatura_c, plagas_objetivo, objetivo_principal,
@@ -188,6 +190,7 @@ function CuadernoContent() {
         .eq("empresa_id", empresaId)
         .neq("estado", "anulada")
         .order("fecha_aplicacion", { ascending: false });
+      if (campoId) query = query.eq("campo_id", campoId);
       if (fechaDesde) query = query.gte("fecha_aplicacion", fechaDesde);
       if (fechaHasta) query = query.lte("fecha_aplicacion", fechaHasta);
       return query;
@@ -203,17 +206,21 @@ function CuadernoContent() {
     setFilas(flattenOTs((data as unknown as OTRaw[]) || []));
   };
 
+  const [filtroEspecie, setFiltroEspecie] = useState("");
+
   // Opciones únicas para filtros
   const cuarteles = useMemo(() => [...new Set(filas.map(f => f.cuartel))].sort(), [filas]);
   const productos = useMemo(() => [...new Set(filas.map(f => f.producto))].sort(), [filas]);
+  const especies  = useMemo(() => [...new Set(filas.map(f => f.especie).filter(Boolean))].sort(), [filas]);
 
   // Filas filtradas (desde/hasta ya vienen filtradas del servidor)
   const filtered = useMemo(() => filas.filter(f => {
     if (soloFinalizadas && f.estado !== "finalizada") return false;
     if (filtroCuartel && f.cuartel !== filtroCuartel) return false;
     if (filtroProducto && f.producto !== filtroProducto) return false;
+    if (filtroEspecie && f.especie !== filtroEspecie) return false;
     return true;
-  }), [filas, filtroCuartel, filtroProducto, soloFinalizadas]);
+  }), [filas, filtroCuartel, filtroProducto, filtroEspecie, soloFinalizadas]);
 
   // ── Excel export ──────────────────────────────────────────────────────────
   const exportar = async () => {
@@ -282,7 +289,7 @@ function CuadernoContent() {
           <div>
             <h1 style={pageTitle}>Cuaderno de Campo</h1>
             <p style={pageSub}>
-              Aplicaciones en formato plano — mostrando {desde ? `desde ${desde}` : "todo el historial"}
+              {campoNombre ? `${campoNombre} · ` : ""}Aplicaciones en formato plano — mostrando {desde ? `desde ${desde}` : "todo el historial"}
             </p>
           </div>
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
@@ -339,6 +346,15 @@ function CuadernoContent() {
               {productos.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
+          {especies.length > 1 && (
+            <div style={filtroGrp}>
+              <label style={filtroLabel}>Especie</label>
+              <select value={filtroEspecie} onChange={e => setFiltroEspecie(e.target.value)} style={filtroInput}>
+                <option value="">Todas</option>
+                {especies.map(e => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </div>
+          )}
           <label style={checkLabel}>
             <input
               type="checkbox"
@@ -348,9 +364,9 @@ function CuadernoContent() {
             />
             Solo finalizadas
           </label>
-          {(filtroCuartel || filtroProducto || soloFinalizadas) && (
+          {(filtroCuartel || filtroProducto || filtroEspecie || soloFinalizadas) && (
             <button
-              onClick={() => { setFiltroCuartel(""); setFiltroProducto(""); setSoloFinalizadas(false); }}
+              onClick={() => { setFiltroCuartel(""); setFiltroProducto(""); setFiltroEspecie(""); setSoloFinalizadas(false); }}
               style={clearBtn}
             >
               Limpiar filtros

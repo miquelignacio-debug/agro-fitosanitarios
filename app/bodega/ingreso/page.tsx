@@ -9,6 +9,10 @@ import { useCampo } from "@/lib/useCampo";
 import type { Producto, Usuario } from "@/lib/types";
 
 import { Suspense } from "react";
+
+const ETIQ_PALETA = ['#1a4731','#1d4ed8','#7c3aed','#b45309','#0f766e','#be185d','#dc2626','#0369a1'];
+function etiqColor(n: string) { let h = 0; for (const c of n) h = (h * 31 + c.charCodeAt(0)) & 0xfffffff; return ETIQ_PALETA[h % ETIQ_PALETA.length]; }
+
 function IngresoContent() {
   const router = useRouter();
   const { empresaId } = useEmpresa();
@@ -31,6 +35,8 @@ function IngresoContent() {
   const [proveedor, setProveedor] = useState("");
   const [precioUnitario, setPrecioUnitario] = useState("");
   const [notas, setNotas] = useState("");
+  const [etiquetasDisp, setEtiquetasDisp] = useState<string[]>([]);
+  const [etiquetas, setEtiquetas] = useState<string[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [catalogProv, setCatalogProv] = useState<string[]>([]);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -70,6 +76,15 @@ function IngresoContent() {
     init();
   }, []);
 
+  useEffect(() => {
+    if (!empresaId) return;
+    supabase.from("cuarteles").select("especie").eq("empresa_id", empresaId).eq("activo", true)
+      .then(({ data }) => {
+        const esp = [...new Set((data || []).map((c: { especie: string }) => c.especie).filter(Boolean))].sort() as string[];
+        setEtiquetasDisp(esp);
+      });
+  }, [empresaId]);
+
   const productosFiltrados = productos;
 
   const handleSave = async () => {
@@ -99,6 +114,7 @@ function IngresoContent() {
       precio_unitario: precioUnitario ? parseFloat(precioUnitario) : null,
       notas: notas.trim() || null,
       usuario_id: usuario?.id || null,
+      etiquetas: etiquetas.length ? etiquetas : null,
     });
 
     setSaving(false);
@@ -246,6 +262,36 @@ function IngresoContent() {
               </div>
             )}
           </section>
+
+          {/* Etiqueta (especie) */}
+          {etiquetasDisp.length > 0 && (
+            <section style={section}>
+              <h2 style={sectionTitle}>Etiqueta — Opcional</h2>
+              <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "10px" }}>
+                Asociá este ingreso a una o más especies para filtrar el stock por especie.
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {etiquetasDisp.map(e => {
+                  const sel = etiquetas.includes(e);
+                  return (
+                    <button
+                      key={e}
+                      type="button"
+                      onClick={() => setEtiquetas(prev => sel ? prev.filter(x => x !== e) : [...prev, e])}
+                      style={{
+                        padding: "5px 14px", borderRadius: "999px", border: `1.5px solid ${etiqColor(e)}`,
+                        background: sel ? etiqColor(e) : "#fff",
+                        color: sel ? "#fff" : etiqColor(e),
+                        fontSize: "12px", fontWeight: 700, cursor: "pointer",
+                      }}
+                    >
+                      {e}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* Notas */}
           <section style={{ ...section, borderBottom: "none" }}>

@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useRol } from "./useRol";
 import { useEmpresa } from "./useEmpresa";
 import { useCampo } from "./useCampo";
+import AgroChat from "@/components/AgroChat";
 
 const NAV_LINKS = [
   { href: "/dashboard",   label: "Inicio" },
@@ -55,7 +56,7 @@ function NavContent() {
       .then(({ count }) => setBorradoresCount(count ?? 0));
   }, [isAdmin, empresaId, pathname]);
 
-  useEffect(() => { setMenuOpen(false); setSelectorOpen(false); }, [pathname]);
+  useEffect(() => { setMenuOpen(false); setSelectorOpen(false); setCampoSelectorOpen(false); }, [pathname]);
 
   // Cerrar selectores al hacer click fuera
   useEffect(() => {
@@ -227,7 +228,7 @@ function NavContent() {
         </div>
 
         {/* Menú desplegable mobile */}
-        <div className="nav-links-mobile" style={{ ...mobileMenu, maxHeight: menuOpen ? "600px" : "0", opacity: menuOpen ? 1 : 0 }}>
+        <div className="nav-links-mobile" style={{ ...mobileMenu, maxHeight: menuOpen ? "90vh" : "0", opacity: menuOpen ? 1 : 0, overflowY: menuOpen ? "auto" : "hidden" }}>
           {/* Info usuario mobile */}
           {userNombre && (
             <div style={{ padding: "12px 20px", borderBottom: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", gap: "10px" }}>
@@ -314,9 +315,12 @@ function NavFallback() {
 
 export default function Nav() {
   return (
-    <Suspense fallback={<NavFallback />}>
-      <NavContent />
-    </Suspense>
+    <>
+      <Suspense fallback={<NavFallback />}>
+        <NavContent />
+      </Suspense>
+      <AgroChat />
+    </>
   );
 }
 

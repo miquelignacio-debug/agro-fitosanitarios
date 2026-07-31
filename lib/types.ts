@@ -120,6 +120,7 @@ export type StockMovimiento = {
   empresa_contraparte_id: string | null;
   notas: string | null;
   usuario_id: string | null;
+  etiquetas: string[] | null;
   created_at: string;
   // joins
   producto?: Producto;

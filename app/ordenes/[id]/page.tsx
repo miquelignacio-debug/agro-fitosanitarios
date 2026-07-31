@@ -334,22 +334,60 @@ function OTDetalleContent() {
       }
     }
 
-    const salidaCampo = consumos
-      .filter(({ consumoCampo }) => consumoCampo > 0)
-      .map(({ p, consumoCampo, unidadStock }) => ({
-        empresa_id: ot.empresa_id, campo_id: ot.campo_id, producto_id: p.producto_id,
-        tipo: "salida" as const, cantidad: consumoCampo, unidad: unidadStock, fecha, ot_id: ot.id,
-        precio_unitario: costoPromedio[p.producto_id] ?? null,
-      }));
+    // Agrupar cuarteles por especie para split proporcional con etiquetas
+    const haByEspecie = new Map<string, number>();
+    for (const oc of ot.ot_cuarteles) {
+      const esp = oc.cuartel?.especie;
+      if (esp) haByEspecie.set(esp, (haByEspecie.get(esp) ?? 0) + oc.superficie_ha);
+    }
 
-    const salidaBarbecho = consumos
-      .filter(({ consumoBarbecho }) => consumoBarbecho > 0)
-      .map(({ p, consumoBarbecho, unidadStock }) => ({
-        empresa_id: ot.empresa_id, campo_id: ot.campo_id, producto_id: p.producto_id,
-        tipo: "salida_barbecho" as const, cantidad: consumoBarbecho, unidad: unidadStock, fecha, ot_id: ot.id,
-        notas: `Remanente barbecho (${remanenteLt} lt agua)`,
-        precio_unitario: costoPromedio[p.producto_id] ?? null,
-      }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const salidaCampo: any[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const salidaBarbecho: any[] = [];
+
+    if (haByEspecie.size > 0) {
+      for (const [especie, haEsp] of haByEspecie) {
+        const aguaEsp = mojReal * haEsp;
+        for (const { p, unidadStock } of consumos) {
+          const qty = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaEsp);
+          if (qty > 0) salidaCampo.push({
+            empresa_id: ot.empresa_id, campo_id: ot.campo_id, producto_id: p.producto_id,
+            tipo: "salida", cantidad: qty, unidad: unidadStock, fecha, ot_id: ot.id,
+            precio_unitario: costoPromedio[p.producto_id] ?? null, etiquetas: [especie],
+          });
+        }
+        if (remanenteLt > 0) {
+          const aguaBarbEsp = remanenteLt * (haEsp / supTotal);
+          for (const { p, unidadStock } of consumos) {
+            const qty = calcConsumoFromWater(p.dosis_real, p.dosis_unidad, mojSol, aguaBarbEsp);
+            if (qty > 0) salidaBarbecho.push({
+              empresa_id: ot.empresa_id, campo_id: ot.campo_id, producto_id: p.producto_id,
+              tipo: "salida_barbecho", cantidad: qty, unidad: unidadStock, fecha, ot_id: ot.id,
+              notas: `Remanente barbecho (${remanenteLt} lt agua)`,
+              precio_unitario: costoPromedio[p.producto_id] ?? null, etiquetas: [especie],
+            });
+          }
+        }
+      }
+    } else {
+      // Fallback: cuarteles sin especie definida → salida única sin etiqueta
+      for (const { p, consumoCampo, unidadStock } of consumos) {
+        if (consumoCampo > 0) salidaCampo.push({
+          empresa_id: ot.empresa_id, campo_id: ot.campo_id, producto_id: p.producto_id,
+          tipo: "salida", cantidad: consumoCampo, unidad: unidadStock, fecha, ot_id: ot.id,
+          precio_unitario: costoPromedio[p.producto_id] ?? null,
+        });
+      }
+      for (const { p, consumoBarbecho, unidadStock } of consumos) {
+        if (consumoBarbecho > 0) salidaBarbecho.push({
+          empresa_id: ot.empresa_id, campo_id: ot.campo_id, producto_id: p.producto_id,
+          tipo: "salida_barbecho", cantidad: consumoBarbecho, unidad: unidadStock, fecha, ot_id: ot.id,
+          notas: `Remanente barbecho (${remanenteLt} lt agua)`,
+          precio_unitario: costoPromedio[p.producto_id] ?? null,
+        });
+      }
+    }
 
     if (salidaCampo.length === 0 && salidaBarbecho.length === 0) {
       setTransError("OT finalizada, pero no se pudo calcular consumo de productos (verificá que las unidades de dosis sean /ha o /100lt).");

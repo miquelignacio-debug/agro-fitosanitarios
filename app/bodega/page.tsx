@@ -92,6 +92,10 @@ function calcConsumoPlaneado(dosis: number, dosisUnidad: string, totalHa: number
 }
 
 const TIPOS_SUMA = new Set(["entrada", "transferencia_entrada", "ajuste_entrada"]);
+const TIPOS_SALIDA = new Set(["salida", "salida_barbecho", "salida_venta", "salida_devolucion", "transferencia_salida", "ajuste_salida"]);
+
+const ETIQ_PALETA = ['#1a4731','#1d4ed8','#7c3aed','#b45309','#0f766e','#be185d','#dc2626','#0369a1'];
+function etiqColor(n: string) { let h = 0; for (const c of n) h = (h * 31 + c.charCodeAt(0)) & 0xfffffff; return ETIQ_PALETA[h % ETIQ_PALETA.length]; }
 
 function BodegaContent() {
   const router = useRouter();
@@ -137,6 +141,7 @@ function BodegaContent() {
     docNumero: string;
     proveedor: string;
     notas: string;
+    etiquetas: string[];
   };
   const [editMov,     setEditMov]     = useState<EditMovForm | null>(null);
   const [editSaving,  setEditSaving]  = useState(false);
@@ -150,6 +155,10 @@ function BodegaContent() {
   const [otsDesviacion, setOtsDesviacion] = useState<OtDesviacion[]>([]);
   const [costosMap,     setCostosMap]     = useState<Map<string, number>>(new Map());
   const [desAnio,       setDesAnio]       = useState(new Date().getFullYear());
+  const [etiquetasDisp, setEtiquetasDisp] = useState<string[]>([]);
+  const [stockEtiqueta, setStockEtiqueta] = useState("");
+  const [movEtiqueta,   setMovEtiqueta]   = useState("");
+  const [tagBalance,    setTagBalance]    = useState<Map<string, number>>(new Map());
   const [salidaVentaPrecio, setSalidaVentaPrecio] = useState<number | null>(null);
   const [salidaVentaForm,   setSalidaVentaForm]   = useState<SalidaVentaForm>({
     productoId: "", cantidad: "", tipo: "salida_venta",
@@ -171,6 +180,31 @@ function BodegaContent() {
     };
     init();
   }, [empresaId, campoId]);
+
+  useEffect(() => {
+    if (!empresaId) return;
+    supabase.from("cuarteles").select("especie").eq("empresa_id", empresaId).eq("activo", true)
+      .then(({ data }) => {
+        const esp = [...new Set((data || []).map((c: { especie: string }) => c.especie).filter(Boolean))].sort() as string[];
+        setEtiquetasDisp(esp);
+      });
+  }, [empresaId]);
+
+  useEffect(() => {
+    if (!stockEtiqueta || !empresaId) { setTagBalance(new Map()); return; }
+    const q = supabase.from("stock_movimientos")
+      .select("producto_id, tipo, cantidad")
+      .eq("empresa_id", empresaId)
+      .contains("etiquetas", [stockEtiqueta]);
+    (campoId ? q.eq("campo_id", campoId) : q).then(({ data }) => {
+      const bal = new Map<string, number>();
+      for (const m of (data || []) as { producto_id: string; tipo: string; cantidad: number }[]) {
+        const sign = TIPOS_SUMA.has(m.tipo) ? 1 : -1;
+        bal.set(m.producto_id, (bal.get(m.producto_id) ?? 0) + sign * Number(m.cantidad));
+      }
+      setTagBalance(bal);
+    });
+  }, [stockEtiqueta, empresaId, campoId]);
 
   const load = async (eid: string) => {
     setLoading(true);
@@ -345,10 +379,11 @@ function BodegaContent() {
   });
 
   const movsFiltrados = movimientos.filter(m => {
-    const matchProd  = !movSearch || m.producto?.nombre_comercial?.toLowerCase().includes(movSearch.toLowerCase());
-    const matchDesde = !movDesde  || m.fecha >= movDesde;
-    const matchHasta = !movHasta  || m.fecha <= movHasta;
-    return matchProd && matchDesde && matchHasta;
+    const matchProd  = !movSearch     || m.producto?.nombre_comercial?.toLowerCase().includes(movSearch.toLowerCase());
+    const matchDesde = !movDesde      || m.fecha >= movDesde;
+    const matchHasta = !movHasta      || m.fecha <= movHasta;
+    const matchEtiq  = !movEtiqueta   || (m.etiquetas?.includes(movEtiqueta) ?? false);
+    return matchProd && matchDesde && matchHasta && matchEtiq;
   });
 
   // Running stock balance per product, computed backwards from current campo stock
@@ -481,6 +516,7 @@ function BodegaContent() {
       docNumero: m.documento_numero || "",
       proveedor: m.proveedor || "",
       notas: m.notas || "",
+      etiquetas: m.etiquetas ?? [],
     });
   };
 
@@ -490,16 +526,20 @@ function BodegaContent() {
     if (!cantNum || cantNum <= 0) { setEditError("La cantidad debe ser mayor a 0."); return; }
     setEditSaving(true);
     setEditError("");
+    const isSalida = TIPOS_SALIDA.has(editMov.tipo);
     const { error } = await supabase
       .from("stock_movimientos")
       .update({
-        fecha: editMov.fecha,
-        cantidad: cantNum,
-        precio_unitario: editMov.precioUnitario ? parseFloat(editMov.precioUnitario) : null,
-        documento_tipo: (editMov.docTipo as "guia_despacho" | "factura") || null,
-        documento_numero: editMov.docNumero.trim() || null,
-        proveedor: editMov.proveedor.trim() || null,
-        notas: editMov.notas.trim() || null,
+        etiquetas: editMov.etiquetas.length ? editMov.etiquetas : null,
+        ...(isSalida ? {} : {
+          fecha: editMov.fecha,
+          cantidad: cantNum,
+          precio_unitario: editMov.precioUnitario ? parseFloat(editMov.precioUnitario) : null,
+          documento_tipo: (editMov.docTipo as "guia_despacho" | "factura") || null,
+          documento_numero: editMov.docNumero.trim() || null,
+          proveedor: editMov.proveedor.trim() || null,
+          notas: editMov.notas.trim() || null,
+        }),
       })
       .eq("id", editMov.id);
     setEditSaving(false);
@@ -877,91 +917,92 @@ function BodegaContent() {
         )}
 
         {/* Modal editar movimiento */}
-        {editMov && (
+        {editMov && (() => {
+          const isSalidaMov = TIPOS_SALIDA.has(editMov.tipo);
+          return (
           <div style={modalOverlay}>
             <div style={{ ...modalBox, width: "500px" }}>
               <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#1a4731", marginBottom: "4px" }}>
-                Editar ingreso
+                {isSalidaMov ? "Editar etiquetas" : "Editar movimiento"}
               </h3>
               <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px" }}>
                 {editMov.productoNombre} · {tipoLabel[editMov.tipo] || editMov.tipo}
               </p>
               <div style={{ display: "grid", gap: "14px" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                {/* Etiquetas — siempre visible */}
+                {etiquetasDisp.length > 0 && (
                   <div>
-                    <label style={lbl}>Fecha</label>
-                    <input
-                      type="date"
-                      value={editMov.fecha}
-                      onChange={e => setEditMov(f => f && ({ ...f, fecha: e.target.value }))}
-                      style={minp}
-                    />
+                    <label style={lbl}>Etiquetas (especie)</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
+                      {etiquetasDisp.map(e => {
+                        const sel = editMov.etiquetas.includes(e);
+                        return (
+                          <button key={e} type="button"
+                            onClick={() => setEditMov(f => f && ({ ...f, etiquetas: sel ? f.etiquetas.filter(x => x !== e) : [...f.etiquetas, e] }))}
+                            style={{ padding: "4px 12px", borderRadius: "999px", border: `1.5px solid ${etiqColor(e)}`,
+                              background: sel ? etiqColor(e) : "#fff", color: sel ? "#fff" : etiqColor(e),
+                              fontSize: "12px", fontWeight: 700, cursor: "pointer" }}>
+                            {e}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div>
-                    <label style={lbl}>Cantidad ({editMov.unidad})</label>
-                    <input
-                      type="number" min="0" step="any"
-                      value={editMov.cantidad}
-                      onChange={e => setEditMov(f => f && ({ ...f, cantidad: e.target.value }))}
-                      style={minp}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label style={lbl}>Precio unitario ($/unidad)</label>
-                  <input
-                    type="number" min="0" step="any"
-                    value={editMov.precioUnitario}
-                    onChange={e => setEditMov(f => f && ({ ...f, precioUnitario: e.target.value }))}
-                    style={minp}
-                    placeholder="Opcional"
-                  />
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                  <div>
-                    <label style={lbl}>Tipo de documento</label>
-                    <select
-                      value={editMov.docTipo}
-                      onChange={e => setEditMov(f => f && ({ ...f, docTipo: e.target.value }))}
-                      style={minp}
-                    >
-                      <option value="">Sin documento</option>
-                      <option value="guia_despacho">Guía de despacho</option>
-                      <option value="factura">Factura</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={lbl}>N° Documento</label>
-                    <input
-                      value={editMov.docNumero}
-                      onChange={e => setEditMov(f => f && ({ ...f, docNumero: e.target.value }))}
-                      style={minp}
-                      placeholder="Ej. 975392"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label style={lbl}>Proveedor</label>
-                  <input
-                    list="edit-catalog-prov"
-                    value={editMov.proveedor}
-                    onChange={e => setEditMov(f => f && ({ ...f, proveedor: e.target.value }))}
-                    style={minp}
-                    placeholder="Buscar o escribir proveedor..."
-                  />
-                  <datalist id="edit-catalog-prov">
-                    {catalogProv.map(n => <option key={n} value={n} />)}
-                  </datalist>
-                </div>
-                <div>
-                  <label style={lbl}>Notas</label>
-                  <input
-                    value={editMov.notas}
-                    onChange={e => setEditMov(f => f && ({ ...f, notas: e.target.value }))}
-                    style={minp}
-                    placeholder="Opcional"
-                  />
-                </div>
+                )}
+                {/* Campos de cantidad/documento/notas — solo para entradas y ajustes */}
+                {!isSalidaMov && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                      <div>
+                        <label style={lbl}>Fecha</label>
+                        <input type="date" value={editMov.fecha}
+                          onChange={e => setEditMov(f => f && ({ ...f, fecha: e.target.value }))} style={minp} />
+                      </div>
+                      <div>
+                        <label style={lbl}>Cantidad ({editMov.unidad})</label>
+                        <input type="number" min="0" step="any" value={editMov.cantidad}
+                          onChange={e => setEditMov(f => f && ({ ...f, cantidad: e.target.value }))} style={minp} />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={lbl}>Precio unitario ($/unidad)</label>
+                      <input type="number" min="0" step="any" value={editMov.precioUnitario}
+                        onChange={e => setEditMov(f => f && ({ ...f, precioUnitario: e.target.value }))}
+                        style={minp} placeholder="Opcional" />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                      <div>
+                        <label style={lbl}>Tipo de documento</label>
+                        <select value={editMov.docTipo} onChange={e => setEditMov(f => f && ({ ...f, docTipo: e.target.value }))} style={minp}>
+                          <option value="">Sin documento</option>
+                          <option value="guia_despacho">Guía de despacho</option>
+                          <option value="factura">Factura</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={lbl}>N° Documento</label>
+                        <input value={editMov.docNumero}
+                          onChange={e => setEditMov(f => f && ({ ...f, docNumero: e.target.value }))}
+                          style={minp} placeholder="Ej. 975392" />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={lbl}>Proveedor</label>
+                      <input list="edit-catalog-prov" value={editMov.proveedor}
+                        onChange={e => setEditMov(f => f && ({ ...f, proveedor: e.target.value }))}
+                        style={minp} placeholder="Buscar o escribir proveedor..." />
+                      <datalist id="edit-catalog-prov">
+                        {catalogProv.map(n => <option key={n} value={n} />)}
+                      </datalist>
+                    </div>
+                    <div>
+                      <label style={lbl}>Notas</label>
+                      <input value={editMov.notas}
+                        onChange={e => setEditMov(f => f && ({ ...f, notas: e.target.value }))}
+                        style={minp} placeholder="Opcional" />
+                    </div>
+                  </>
+                )}
                 {editError && (
                   <p style={{ fontSize: "13px", color: "#dc2626", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "8px", padding: "10px 14px", margin: 0 }}>
                     {editError}
@@ -976,7 +1017,8 @@ function BodegaContent() {
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Modal historial de movimientos por producto */}
         {historialProductoId && (() => {
@@ -1080,10 +1122,46 @@ function BodegaContent() {
                 <input type="checkbox" checked={stockBajo} onChange={e => setStockBajo(e.target.checked)} />
                 Solo bajo stock
               </label>
-              {(stockSearch || stockFuncion || stockBajo) && (
+              {(stockSearch || stockFuncion || stockBajo || stockEtiqueta) && (
                 <span style={{ fontSize: "12px", color: "#6b7280" }}>{stockFiltrado.length} / {stock.length} productos</span>
               )}
             </div>
+            {etiquetasDisp.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px", alignItems: "center" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase" }}>Etiqueta:</span>
+                {etiquetasDisp.map(e => (
+                  <button key={e} type="button" onClick={() => setStockEtiqueta(prev => prev === e ? "" : e)}
+                    style={{ padding: "3px 12px", borderRadius: "999px", border: `1.5px solid ${etiqColor(e)}`,
+                      background: stockEtiqueta === e ? etiqColor(e) : "#fff",
+                      color: stockEtiqueta === e ? "#fff" : etiqColor(e),
+                      fontSize: "12px", fontWeight: 700, cursor: "pointer" }}>
+                    {e}
+                  </button>
+                ))}
+                {stockEtiqueta && <button onClick={() => setStockEtiqueta("")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "12px", color: "#6b7280" }}>✕</button>}
+              </div>
+            )}
+            {stockEtiqueta && tagBalance.size > 0 && (
+              <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "10px", padding: "14px 18px", marginBottom: "14px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#1a4731", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  Stock etiqueta: {stockEtiqueta}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  {[...tagBalance.entries()].map(([pid, bal]) => {
+                    const prod = stock.find(s => s.producto_id === pid);
+                    if (!prod) return null;
+                    return (
+                      <div key={pid} style={{ background: "#fff", borderRadius: "8px", padding: "8px 14px", border: `1px solid ${bal < 0 ? "#fca5a5" : "#bbf7d0"}` }}>
+                        <div style={{ fontSize: "11px", fontWeight: 600, color: "#6b7280" }}>{prod.producto.nombre_comercial}</div>
+                        <div style={{ fontSize: "17px", fontWeight: 800, color: bal < 0 ? "#dc2626" : "#15803d" }}>
+                          {displayStock(bal, prod.producto.unidad_bodega)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div style={{ overflowX: "auto" }}>
             <table style={table}>
               <thead>
@@ -1200,11 +1278,20 @@ function BodegaContent() {
               onChange={e => setMovHasta(e.target.value)}
               style={{ ...filterInput, minWidth: "140px" }}
             />
-            {(movSearch || movDesde || movHasta) && (
+            {etiquetasDisp.map(e => (
+              <button key={e} type="button" onClick={() => setMovEtiqueta(prev => prev === e ? "" : e)}
+                style={{ padding: "3px 12px", borderRadius: "999px", border: `1.5px solid ${etiqColor(e)}`,
+                  background: movEtiqueta === e ? etiqColor(e) : "#fff",
+                  color: movEtiqueta === e ? "#fff" : etiqColor(e),
+                  fontSize: "12px", fontWeight: 700, cursor: "pointer" }}>
+                {e}
+              </button>
+            ))}
+            {(movSearch || movDesde || movHasta || movEtiqueta) && (
               <>
                 <span style={{ fontSize: "12px", color: "#6b7280" }}>{movsFiltrados.length} / {movimientos.length}</span>
                 <button
-                  onClick={() => { setMovSearch(""); setMovDesde(""); setMovHasta(""); }}
+                  onClick={() => { setMovSearch(""); setMovDesde(""); setMovHasta(""); setMovEtiqueta(""); }}
                   style={{ background: "none", border: "none", cursor: "pointer", fontSize: "12px", color: "#6b7280" }}
                 >
                   ✕ Limpiar filtros
@@ -1218,7 +1305,7 @@ function BodegaContent() {
                 <tr>
                   {["Fecha", "Tipo", "Producto", "Cantidad", "Stock final",
                     ...(showPrecios ? ["Valor unit.", "Valor total"] : []),
-                    "Documento", "Origen / OT / Destino", "Notas", ""].map((h) => (
+                    "Documento", "Origen / OT / Destino", "Notas", "Etiquetas", ""].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -1278,13 +1365,22 @@ function BodegaContent() {
                     </td>
                     <td style={{ ...td, color: "#6b7280" }}>{m.notas || "—"}</td>
                     <td style={td}>
-                      {(m.tipo === "entrada" || m.tipo === "ajuste_entrada" || m.tipo === "ajuste_salida") && isAdmin && (
+                      {m.etiquetas && m.etiquetas.length > 0 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "2px" }}>
+                          {m.etiquetas.map(e => (
+                            <span key={e} style={{ display: "inline-block", padding: "2px 8px", borderRadius: "999px", fontSize: "10px", fontWeight: 700, background: etiqColor(e), color: "#fff" }}>{e}</span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td style={td}>
+                      {isAdmin && (m.tipo === "entrada" || m.tipo === "ajuste_entrada" || m.tipo === "ajuste_salida" || TIPOS_SALIDA.has(m.tipo)) && (
                         <button
                           onClick={() => openEditMov(m)}
-                          title="Editar ingreso"
+                          title={TIPOS_SALIDA.has(m.tipo) ? "Editar etiquetas" : "Editar movimiento"}
                           style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", padding: "6px 8px", color: "#6b7280", lineHeight: 1 }}
                         >
-                          ✏️
+                          {TIPOS_SALIDA.has(m.tipo) ? "🏷️" : "✏️"}
                         </button>
                       )}
                     </td>
@@ -1292,7 +1388,7 @@ function BodegaContent() {
                 ))}
                 {movsFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={showPrecios ? 10 : 8} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
+                    <td colSpan={showPrecios ? 12 : 10} style={{ ...td, textAlign: "center", color: "#9ca3af", padding: "30px" }}>
                       {movimientos.length === 0 ? "Sin movimientos registrados." : "Sin resultados con los filtros aplicados."}
                     </td>
                   </tr>
