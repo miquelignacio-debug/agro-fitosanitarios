@@ -59,7 +59,7 @@ async function buildContext(empresaId: string, campoId: string | null, authHeade
     .neq("estado", "anulada")
     .gte("fecha_solicitud", hace60)
     .order("fecha_solicitud", { ascending: false })
-    .limit(25);
+    .limit(15);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ots } = await (campoId ? baseOT.eq("campo_id", campoId) : baseOT) as { data: any[] | null };
 
@@ -87,7 +87,7 @@ async function buildContext(empresaId: string, campoId: string | null, authHeade
     .eq("empresa_id", empresaId)
     .gte("fecha", hace60)
     .order("fecha", { ascending: false })
-    .limit(40);
+    .limit(20);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: movs } = await (campoId ? baseMov.eq("campo_id", campoId) : baseMov) as { data: any[] | null };
 
@@ -150,7 +150,7 @@ REGLAS:
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.0-flash-lite",
       systemInstruction,
     });
 
@@ -174,6 +174,9 @@ REGLAS:
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Chat API error:", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    if (msg.includes("429") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("rate")) {
+      return NextResponse.json({ error: "Límite de consultas alcanzado. Esperá 30 segundos y volvé a intentar." }, { status: 429 });
+    }
+    return NextResponse.json({ error: "Error al procesar la consulta. Intentá de nuevo." }, { status: 500 });
   }
 }
