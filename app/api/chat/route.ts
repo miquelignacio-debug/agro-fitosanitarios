@@ -169,7 +169,8 @@ REGLAS:
     const result = await chat.sendMessage(message.trim());
     return NextResponse.json({ response: result.response.text() });
   } catch (err) {
-    console.error("Chat API error:", err);
-    return NextResponse.json({ error: "Error al procesar la consulta. Intentá de nuevo." }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Chat API error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
