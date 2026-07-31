@@ -436,7 +436,13 @@ function NuevaOTContent() {
       const warns: string[] = [];
       for (const p of productosOT.filter(r => r.producto_id && r.dosis_real)) {
         const consumo = estimarConsumo(p);
-        if (consumo === null) continue;
+        if (consumo === null) {
+          if (p.dosis_unidad.includes("/100") && !parseFloat(mojamientoSol)) {
+            const nombre = productos.find(pr => pr.id === p.producto_id)?.nombre_comercial ?? p.producto_id;
+            warns.push(`${nombre}: dosis en ${p.dosis_unidad} requiere completar el mojamiento para verificar stock`);
+          }
+          continue;
+        }
         const eff = getStockEfectivo(p.producto_id);
         if (eff === null) continue;
         if (consumo > eff.saldo) {
@@ -479,7 +485,6 @@ function NuevaOTContent() {
     if (otErr || !ot) { setError(otErr?.message || "Error creando OT"); setSaving(false); return; }
     const otId = ot.id;
 
-    const superficieTotal = cuartelesOT.reduce((s, c) => s + (parseFloat(c.superficie_ha) || 0), 0);
     const mojVal = parseFloat(mojamientoSol) || 0;
     const pulv = implementos.find(p => p.id === aplicadorOT.pulverizador_id);
     const capacidadLt = pulv?.capacidad_lt ?? 0;

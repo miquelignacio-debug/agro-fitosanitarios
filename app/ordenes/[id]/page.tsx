@@ -888,7 +888,11 @@ function OTDetalleContent() {
             <div style={card}>
               <h3 style={cardTitle}>Productos a aplicar</h3>
               {ot.ot_productos.map(p => {
-                const unidadDisplay = p.producto.unidad_bodega || p.dosis_unidad.split("/")[0];
+                const dosisPrefix = p.dosis_unidad.split("/")[0].toLowerCase();
+                const unidadDisplay = p.producto.unidad_bodega ?? (
+                  (dosisPrefix === "cc" || dosisPrefix === "ml") ? "lt" :
+                  dosisPrefix === "g" ? "kg" : dosisPrefix
+                );
                 return (
                   <div key={p.id} style={{ ...tableRow, flexDirection: "column", alignItems: "flex-start", gap: "4px" }}>
                     <div style={{ fontWeight: 700 }}>{p.producto.nombre_comercial}</div>
