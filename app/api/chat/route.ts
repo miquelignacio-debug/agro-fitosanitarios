@@ -13,7 +13,6 @@ async function buildContext(empresaId: string, campoId: string | null, authHeade
   );
 
   const hoy = new Date().toISOString().slice(0, 10);
-  const hace60 = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   // ── Stock actual ──────────────────────────────────────────────────────────
   const baseAgg = supabase
@@ -45,70 +44,51 @@ async function buildContext(empresaId: string, campoId: string | null, authHeade
       `  - ${s.nombre}${s.ia ? ` (${s.ia})` : ""}: ${s.cantidad.toFixed(2)} ${s.unidad}${s.cantidad < 0 ? " ⚠️ NEGATIVO" : ""}`,
     );
 
-  // ── OTs recientes ─────────────────────────────────────────────────────────
+  // ── OTs recientes (últimos 30 días, máx 10) ──────────────────────────────
+  const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const baseOT = supabase
     .from("ordenes_trabajo")
-    .select(`
-      numero, estado, fecha_solicitud, fecha_aplicacion, remanente_lt,
-      ot_cuarteles(superficie_ha, cuartel:cuarteles(codigo, especie, variedad)),
-      ot_productos(dosis_real, dosis_unidad, consumo_total, producto:productos(nombre_comercial)),
-      responsable:personal!responsable_id(nombre),
-      ot_aplicadores(personal:personal!personal_id(nombre), operador:operadores(nombre))
-    `)
+    .select("numero, estado, fecha_aplicacion, ot_cuarteles(cuartel:cuarteles(codigo, especie)), ot_productos(dosis_real, dosis_unidad, producto:productos(nombre_comercial))")
     .eq("empresa_id", empresaId)
     .neq("estado", "anulada")
-    .gte("fecha_solicitud", hace60)
+    .gte("fecha_solicitud", hace30)
     .order("fecha_solicitud", { ascending: false })
-    .limit(15);
+    .limit(10);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ots } = await (campoId ? baseOT.eq("campo_id", campoId) : baseOT) as { data: any[] | null };
 
   const otLines = (ots ?? []).map((ot) => {
     const cuarteles = (ot.ot_cuarteles ?? [])
-      .map((c: { superficie_ha: number; cuartel: { codigo: string; especie: string } | null }) =>
-        `${c.cuartel?.codigo}(${c.cuartel?.especie} ${c.superficie_ha}ha)`)
-      .join(", ");
+      .map((c: { cuartel: { codigo: string; especie: string } | null }) => `${c.cuartel?.codigo}/${c.cuartel?.especie}`)
+      .join(",");
     const prods = (ot.ot_productos ?? [])
-      .map((p: { dosis_real: number; dosis_unidad: string; consumo_total: number | null; producto: { nombre_comercial: string } | null }) =>
-        `${p.producto?.nombre_comercial} ${p.dosis_real}${p.dosis_unidad}${p.consumo_total ? ` consumo:${Number(p.consumo_total).toFixed(2)}` : ""}`)
-      .join(", ");
-    const resp = Array.isArray(ot.responsable) ? ot.responsable[0]?.nombre : ot.responsable?.nombre;
-    const aplics = (ot.ot_aplicadores ?? [])
-      .map((a: { personal: { nombre: string } | null; operador: { nombre: string } | null }) =>
-        a.personal?.nombre ?? a.operador?.nombre ?? "")
-      .filter(Boolean).join(", ");
-    return `  - OT#${ot.numero} [${ot.estado}] ${ot.fecha_aplicacion ?? ot.fecha_solicitud}: ${cuarteles} | ${prods} | Resp:${resp ?? "—"} Aplic:${aplics || "—"}${ot.remanente_lt ? ` Rem:${ot.remanente_lt}lt` : ""}`;
+      .map((p: { dosis_real: number; dosis_unidad: string; producto: { nombre_comercial: string } | null }) =>
+        `${p.producto?.nombre_comercial} ${p.dosis_real}${p.dosis_unidad}`)
+      .join(",");
+    return `OT#${ot.numero}[${ot.estado}] ${ot.fecha_aplicacion ?? "s/f"}: ${cuarteles} | ${prods}`;
   });
 
-  // ── Movimientos de bodega ─────────────────────────────────────────────────
+  // ── Entradas de bodega recientes (últimos 30 días, máx 12) ───────────────
   const baseMov = supabase
     .from("stock_movimientos")
-    .select("fecha, tipo, cantidad, unidad, etiquetas, producto:productos(nombre_comercial), proveedor, notas, precio_unitario")
+    .select("fecha, tipo, cantidad, unidad, etiquetas, producto:productos(nombre_comercial)")
     .eq("empresa_id", empresaId)
-    .gte("fecha", hace60)
+    .gte("fecha", hace30)
     .order("fecha", { ascending: false })
-    .limit(20);
+    .limit(12);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: movs } = await (campoId ? baseMov.eq("campo_id", campoId) : baseMov) as { data: any[] | null };
 
   const movLines = (movs ?? []).map((m) => {
     const sign = TIPOS_SUMA.has(m.tipo) ? "+" : "-";
     const prod = Array.isArray(m.producto) ? m.producto[0] : m.producto;
-    const etiq = Array.isArray(m.etiquetas) && m.etiquetas.length ? ` [${m.etiquetas.join(",")}]` : "";
-    const precio = m.precio_unitario ? ` $${m.precio_unitario}/u` : "";
-    return `  - ${m.fecha} ${sign}${Number(m.cantidad).toFixed(2)}${m.unidad} ${prod?.nombre_comercial ?? "?"}${etiq}${precio}${m.proveedor ? ` prov:${m.proveedor}` : ""}${m.notas ? ` nota:"${m.notas}"` : ""}`;
+    const etiq = Array.isArray(m.etiquetas) && m.etiquetas.length ? `[${m.etiquetas.join(",")}]` : "";
+    return `${m.fecha} ${sign}${Number(m.cantidad).toFixed(1)}${m.unidad} ${prod?.nombre_comercial ?? "?"}${etiq}`;
   });
 
-  return `
-=== STOCK ACTUAL (${campoId ? "campo activo" : "empresa completa"} · ${hoy}) ===
-${stockLines.length ? stockLines.join("\n") : "  Sin stock registrado."}
-
-=== ÓRDENES DE TRABAJO — últimos 60 días ===
-${otLines.length ? otLines.join("\n") : "  Sin OTs en el período."}
-
-=== MOVIMIENTOS DE BODEGA — últimos 60 días ===
-${movLines.length ? movLines.join("\n") : "  Sin movimientos en el período."}
-`.trim();
+  return `STOCK(${hoy}): ${stockLines.join("; ")}
+OTs(30d): ${otLines.join(" | ")}
+MOVS(30d): ${movLines.join("; ")}`.trim();
 }
 
 export async function POST(req: NextRequest) {
@@ -134,19 +114,9 @@ export async function POST(req: NextRequest) {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
     });
 
-    const systemInstruction = `Sos el asistente de AgroFito, una app de gestión fitosanitaria agrícola chilena.
-Tu rol es ayudar al usuario a consultar y entender la información de su empresa.
-
-DATOS ACTUALES:
-${context}
-
-REGLAS:
-- Respondé en español (Chile), tono profesional pero cercano
-- Basá tus respuestas SOLO en los datos del contexto. Si algo no está, decilo — no inventes
-- Sé conciso: 2–4 párrafos o lista bien estructurada
-- Para stock usá las unidades correctas (lt, kg)
-- Hoy es ${hoyStr}
-- Solo podés consultar datos, NO podés crear ni modificar registros`;
+    const systemInstruction = `Asistente AgroFito (fitosanitaria agrícola Chile). Solo lectura. Hoy: ${hoyStr}.
+Respondé en español, conciso, basándote SOLO en estos datos:
+${context}`;
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({

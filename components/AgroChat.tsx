@@ -17,11 +17,12 @@ const SUGERENCIAS = [
 export default function AgroChat() {
   const { empresaId, loading: empresaLoading } = useEmpresa();
   const { campoId } = useCampo();
-  const [open, setOpen]       = useState(false);
-  const [msgs, setMsgs]       = useState<Msg[]>([]);
-  const [input, setInput]     = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
+  const [open, setOpen]         = useState(false);
+  const [msgs, setMsgs]         = useState<Msg[]>([]);
+  const [input, setInput]       = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+  const [cooldown, setCooldown] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef  = useRef<HTMLInputElement>(null);
 
@@ -42,7 +43,7 @@ export default function AgroChat() {
 
   const send = async (text?: string) => {
     const msg = (text ?? input).trim();
-    if (!msg || loading || !empresaId) return;
+    if (!msg || loading || cooldown || !empresaId) return;
     setInput("");
     setError("");
     setMsgs(prev => [...prev, { role: "user", content: msg }]);
@@ -73,6 +74,8 @@ export default function AgroChat() {
       setError("Sin conexión. Intentá de nuevo.");
     }
     setLoading(false);
+    setCooldown(true);
+    setTimeout(() => setCooldown(false), 8000);
   };
 
   // Solo ocultar cuando cargó y definitivamente no hay empresa (usuario no logueado)
@@ -190,17 +193,17 @@ export default function AgroChat() {
             />
             <button
               onClick={() => send()}
-              disabled={loading || !input.trim()}
+              disabled={loading || cooldown || !input.trim()}
               style={{
                 padding: "9px 14px", borderRadius: "10px",
-                background: loading || !input.trim() ? "#e5e7eb" : "#1a4731",
-                border: "none", color: loading || !input.trim() ? "#9ca3af" : "#fff",
+                background: loading || cooldown || !input.trim() ? "#e5e7eb" : "#1a4731",
+                border: "none", color: loading || cooldown || !input.trim() ? "#9ca3af" : "#fff",
                 fontWeight: 700, fontSize: "15px",
-                cursor: loading || !input.trim() ? "default" : "pointer",
+                cursor: loading || cooldown || !input.trim() ? "default" : "pointer",
                 transition: "background 0.15s",
               }}
             >
-              →
+              {cooldown ? "⏳" : "→"}
             </button>
           </div>
         </div>
