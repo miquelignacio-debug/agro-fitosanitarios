@@ -814,6 +814,11 @@ function NuevaOTContent() {
                             {p.nombre_comercial}{p.especies_autorizadas?.length ? ` (${p.especies_autorizadas.slice(0, 2).join(", ")})` : ""}
                           </option>
                         ))}
+                        {/* Prefilled from programa: show product even if it has no stock */}
+                        {row.producto_id && !productosFiltrados.find(p => p.id === row.producto_id) && (() => {
+                          const fallback = productos.find(p => p.id === row.producto_id);
+                          return fallback ? <option key={fallback.id} value={fallback.id}>{fallback.nombre_comercial} ⚠ sin stock</option> : null;
+                        })()}
                       </select>
                     </Field>
                   </div>
