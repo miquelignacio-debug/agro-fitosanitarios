@@ -577,7 +577,8 @@ function DashboardContent() {
                 )}
               </section>
 
-              {/* Costos temporada */}
+              {/* Costos temporada — solo admin */}
+              {!isEncargado && (
               <section style={panel}>
                 <div style={panelHeader}>
                   <h2 style={panelTitle}>Costos {new Date().getFullYear()}</h2>
@@ -628,6 +629,7 @@ function DashboardContent() {
                   </>
                 )}
               </section>
+              )}
             </div>
           </>
         )}

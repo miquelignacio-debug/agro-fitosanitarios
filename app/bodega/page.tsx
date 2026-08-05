@@ -1431,12 +1431,14 @@ function BodegaContent() {
                     {totalExtraLt > 0 ? "+" : ""}{totalExtraLt.toLocaleString("es-CL", { maximumFractionDigits: 0 })} Lt
                   </span>
                 </div>
-                <div style={summaryChip}>
-                  <span style={{ fontSize: "11px", color: "#6b7280" }}>Impacto económico total</span>
-                  <span style={{ fontSize: "20px", fontWeight: 800, color: totalImpacto > 0 ? "#dc2626" : totalImpacto < 0 ? "#15803d" : "#374151" }}>
-                    {totalImpacto !== 0 ? `${totalImpacto > 0 ? "+" : ""}$${Math.abs(totalImpacto).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "$0"}
-                  </span>
-                </div>
+                {showPrecios && (
+                  <div style={summaryChip}>
+                    <span style={{ fontSize: "11px", color: "#6b7280" }}>Impacto económico total</span>
+                    <span style={{ fontSize: "20px", fontWeight: 800, color: totalImpacto > 0 ? "#dc2626" : totalImpacto < 0 ? "#15803d" : "#374151" }}>
+                      {totalImpacto !== 0 ? `${totalImpacto > 0 ? "+" : ""}$${Math.abs(totalImpacto).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "$0"}
+                    </span>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -1447,7 +1449,7 @@ function BodegaContent() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Aplicador", "OTs", "Desviación mojamiento (prom.)", "Vol. extra / menos", "Impacto económico"].map(h => (
+                  {["Aplicador", "OTs", "Desviación mojamiento (prom.)", "Vol. extra / menos", ...(showPrecios ? ["Impacto económico"] : [])].map(h => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -1464,12 +1466,14 @@ function BodegaContent() {
                     <td style={{ ...td, textAlign: "right" }}>
                       {s.totalExtraLt > 0 ? "+" : ""}{s.totalExtraLt.toLocaleString("es-CL", { maximumFractionDigits: 0 })} Lt
                     </td>
-                    <td style={{ ...td, textAlign: "right", fontWeight: 700,
-                      color: s.impactoEconomico > 0 ? "#dc2626" : s.impactoEconomico < 0 ? "#15803d" : "#9ca3af" }}>
-                      {s.impactoEconomico !== 0
-                        ? `${s.impactoEconomico > 0 ? "+" : ""}$${Math.abs(s.impactoEconomico).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
-                        : "—"}
-                    </td>
+                    {showPrecios && (
+                      <td style={{ ...td, textAlign: "right", fontWeight: 700,
+                        color: s.impactoEconomico > 0 ? "#dc2626" : s.impactoEconomico < 0 ? "#15803d" : "#9ca3af" }}>
+                        {s.impactoEconomico !== 0
+                          ? `${s.impactoEconomico > 0 ? "+" : ""}$${Math.abs(s.impactoEconomico).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
+                          : "—"}
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {operadorStats.length === 0 && (
@@ -1491,7 +1495,7 @@ function BodegaContent() {
                 <table style={table}>
                   <thead>
                     <tr>
-                      {["OT", "Fecha", "Aplicador/es", "Ha", "Moj. plan. (lt/ha)", "Moj. real (lt/ha)", "Desviación", "Vol. extra/menos", "Impacto $"].map(h => (
+                      {["OT", "Fecha", "Aplicador/es", "Ha", "Moj. plan. (lt/ha)", "Moj. real (lt/ha)", "Desviación", "Vol. extra/menos", ...(showPrecios ? ["Impacto $"] : [])].map(h => (
                         <th key={h} style={th}>{h}</th>
                       ))}
                     </tr>
@@ -1527,12 +1531,14 @@ function BodegaContent() {
                           <td style={{ ...td, textAlign: "right" }}>
                             {extraLt > 0 ? "+" : ""}{extraLt.toLocaleString("es-CL", { maximumFractionDigits: 0 })} Lt
                           </td>
-                          <td style={{ ...td, textAlign: "right", fontWeight: 600,
-                            color: impacto > 0 ? "#dc2626" : impacto < 0 ? "#15803d" : "#9ca3af" }}>
-                            {impacto !== 0
-                              ? `${impacto > 0 ? "+" : ""}$${Math.abs(impacto).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
-                              : "—"}
-                          </td>
+                          {showPrecios && (
+                            <td style={{ ...td, textAlign: "right", fontWeight: 600,
+                              color: impacto > 0 ? "#dc2626" : impacto < 0 ? "#15803d" : "#9ca3af" }}>
+                              {impacto !== 0
+                                ? `${impacto > 0 ? "+" : ""}$${Math.abs(impacto).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
+                                : "—"}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}

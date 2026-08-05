@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useEmpresa } from "@/lib/useEmpresa";
+import { useRol } from "@/lib/useRol";
 import type { Producto } from "@/lib/types";
 import { Suspense } from "react";
 
@@ -81,6 +82,8 @@ function calcCostosPromedios(movimientos: MovBase[]): Record<string, number | nu
 function InventarioContent() {
   const router = useRouter();
   const { empresaId, empresaNombre } = useEmpresa();
+  const { isAdmin } = useRol();
+  const showPrecios = isAdmin;
 
   const [tab, setTab] = useState<"nueva" | "historial">("nueva");
 
@@ -508,7 +511,7 @@ function InventarioContent() {
                   <table style={table}>
                     <thead>
                       <tr>
-                        {["Producto", "Unidad", "Stock sistema", "Stock real", "Diferencia", "Tipo ajuste", "Costo prom.", "Valor ajuste"].map(h => (
+                        {["Producto", "Unidad", "Stock sistema", "Stock real", "Diferencia", "Tipo ajuste", ...(showPrecios ? ["Costo prom.", "Valor ajuste"] : [])].map(h => (
                           <th key={h} style={th}>{h}</th>
                         ))}
                       </tr>
@@ -533,12 +536,16 @@ function InventarioContent() {
                               {hasDiff ? (diff > 0 ? "+" : "") + Number(diff).toFixed(3) : "—"}
                             </td>
                             <td style={{ ...td, color: tipColor, fontWeight: hasDiff ? 700 : 400 }}>{tipo}</td>
-                            <td style={{ ...td, textAlign: "right", color: "#6b7280" }}>
-                              {l.costo_promedio != null ? `$${Number(l.costo_promedio).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
-                            </td>
-                            <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>
-                              {valorAjuste != null ? `$${valorAjuste.toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
-                            </td>
+                            {showPrecios && (
+                              <td style={{ ...td, textAlign: "right", color: "#6b7280" }}>
+                                {l.costo_promedio != null ? `$${Number(l.costo_promedio).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
+                              </td>
+                            )}
+                            {showPrecios && (
+                              <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>
+                                {valorAjuste != null ? `$${valorAjuste.toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
@@ -617,7 +624,7 @@ function InventarioContent() {
                   <table style={table}>
                     <thead>
                       <tr>
-                        {["Producto", "Unidad", "Stock sistema", "Stock real", "Diferencia", "Costo prom.", "Valor ajuste"].map(h => (
+                        {["Producto", "Unidad", "Stock sistema", "Stock real", "Diferencia", ...(showPrecios ? ["Costo prom.", "Valor ajuste"] : [])].map(h => (
                           <th key={h} style={th}>{h}</th>
                         ))}
                       </tr>
@@ -636,14 +643,18 @@ function InventarioContent() {
                             <td style={{ ...td, textAlign: "right", color: diff > 0.001 ? "#0891b2" : diff < -0.001 ? "#7c3aed" : "#6b7280" }}>
                               {hasDiff ? (diff > 0 ? "+" : "") + Number(diff).toFixed(3) : "—"}
                             </td>
-                            <td style={{ ...td, textAlign: "right", color: "#6b7280" }}>
-                              {l.costo_unitario != null ? `$${Number(l.costo_unitario).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
-                            </td>
-                            <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>
-                              {l.costo_unitario != null && hasDiff
-                                ? `$${(absDiff * Number(l.costo_unitario)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
-                                : "—"}
-                            </td>
+                            {showPrecios && (
+                              <td style={{ ...td, textAlign: "right", color: "#6b7280" }}>
+                                {l.costo_unitario != null ? `$${Number(l.costo_unitario).toLocaleString("es-CL", { maximumFractionDigits: 0 })}` : "—"}
+                              </td>
+                            )}
+                            {showPrecios && (
+                              <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>
+                                {l.costo_unitario != null && hasDiff
+                                  ? `$${(absDiff * Number(l.costo_unitario)).toLocaleString("es-CL", { maximumFractionDigits: 0 })}`
+                                  : "—"}
+                              </td>
+                            )}
                           </tr>
                         );
                       })}

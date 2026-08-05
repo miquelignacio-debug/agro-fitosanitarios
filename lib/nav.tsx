@@ -25,7 +25,7 @@ const NAV_LINKS = [
 function NavContent() {
   const pathname = usePathname();
   const router = useRouter();
-  const { isAdmin, isSuperAdmin } = useRol();
+  const { isAdmin, isSuperAdmin, isEncargado } = useRol();
   const { empresaId, empresaNombre, allEmpresas, switchEmpresa } = useEmpresa();
   const [borradoresCount, setBorradoresCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -74,9 +74,10 @@ function NavContent() {
     router.push("/login");
   };
 
-  const adminLinks = isSuperAdmin
+  const adminLinks = (isSuperAdmin
     ? [...NAV_LINKS, { href: "/programa-fitosanitario", label: "Programa" }, { href: "/admin", label: "Admin" }]
-    : NAV_LINKS;
+    : NAV_LINKS
+  ).filter(l => !(isEncargado && l.href === "/costos"));
 
   const initials = userNombre
     ? userNombre.split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase()

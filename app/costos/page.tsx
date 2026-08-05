@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Nav from "@/lib/nav";
 import { useEmpresa } from "@/lib/useEmpresa";
 import { useCampo } from "@/lib/useCampo";
+import { useRol } from "@/lib/useRol";
 
 type Dimension = "producto" | "cuartel" | "funcion" | "objetivo" | "mes";
 
@@ -50,6 +51,12 @@ function CostosContent() {
   const router = useRouter();
   const { empresaId, empresaNombre } = useEmpresa();
   const { campoId, campoNombre } = useCampo();
+  const { rol, isEncargado } = useRol();
+
+  useEffect(() => {
+    if (rol === null) return;
+    if (isEncargado) router.push("/dashboard");
+  }, [rol, isEncargado, router]);
 
   const currentYear = new Date().getFullYear();
   const [desde, setDesde] = useState(`${currentYear}-01`);

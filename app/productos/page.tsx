@@ -120,13 +120,15 @@ export default function ProductosPage() {
                 <div style={modalBox}>
                   <h3 style={{ fontSize: "15px", fontWeight: 700, color: "#1a4731", marginBottom: "4px" }}>Precio y stock mínimo</h3>
                   <p style={{ fontSize: "12px", color: "#6b7280", marginBottom: "16px" }}>{editPrecios.nombre}</p>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "18px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isAdmin ? "1fr 1fr" : "1fr", gap: "14px", marginBottom: "18px" }}>
+                    {isAdmin && (
                     <div>
                       <label style={lbl}>Precio costo ($/unidad)</label>
                       <input type="number" min="0" step="0.01" value={editPrecios.precio}
                         onChange={e => setEditPrecios(p => p ? { ...p, precio: e.target.value } : null)}
                         style={minp} placeholder="0.00" autoFocus />
                     </div>
+                    )}
                     <div>
                       <label style={lbl}>Stock mínimo (unidad)</label>
                       <input type="number" min="0" step="0.1" value={editPrecios.minimo}
@@ -156,7 +158,7 @@ export default function ProductosPage() {
             <table style={table}>
               <thead>
                 <tr>
-                  {["Producto", "N° Registro", "Ingrediente activo", "Función", "Dosis / unidad", "Carencia (d)", "Reingreso (h)", "Precio costo", "Stock mín.", "Abejas 🐝", "Fuente", ""].map((h) => (
+                  {["Producto", "N° Registro", "Ingrediente activo", "Función", "Dosis / unidad", "Carencia (d)", "Reingreso (h)", ...(isAdmin ? ["Precio costo"] : []), "Stock mín.", "Abejas 🐝", "Fuente", ""].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -175,9 +177,11 @@ export default function ProductosPage() {
                     <td style={td}>{p.unidad_dosis || "—"}</td>
                     <td style={{ ...td, textAlign: "center" }}>{p.phi_dias ?? "—"}</td>
                     <td style={{ ...td, textAlign: "center" }}>{p.rei_horas ?? "—"}</td>
-                    <td style={{ ...td, textAlign: "right", color: p.precio_costo ? "#1a4731" : "#d1d5db", fontWeight: p.precio_costo ? 700 : 400 }}>
-                      {p.precio_costo != null ? `$${p.precio_costo.toLocaleString("es-CL")}` : "—"}
-                    </td>
+                    {isAdmin && (
+                      <td style={{ ...td, textAlign: "right", color: p.precio_costo ? "#1a4731" : "#d1d5db", fontWeight: p.precio_costo ? 700 : 400 }}>
+                        {p.precio_costo != null ? `$${p.precio_costo.toLocaleString("es-CL")}` : "—"}
+                      </td>
+                    )}
                     <td style={{ ...td, textAlign: "right", color: p.stock_minimo ? "#374151" : "#d1d5db" }}>
                       {p.stock_minimo != null && p.stock_minimo > 0 ? `${p.stock_minimo} ${p.unidad_dosis || "u"}` : "—"}
                     </td>
